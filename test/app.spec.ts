@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto';
 
 describe('SmartGesso API (Prisma)', () => {
   let app: INestApplication;
-  let prisma: PrismaService;
 
   const ADMIN_EMAIL = process.env.SEED_PLATFORM_ADMIN_EMAIL || 'admin@smartgesso.local';
   const ADMIN_PASSWORD = 'SmartGesso@2026';
