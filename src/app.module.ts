@@ -10,6 +10,7 @@ import { PrismaModule } from './database/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CompaniesModule } from './modules/companies/companies.module';
 import { CoreModule } from './modules/core/core.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthModule } from './modules/health/health.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { PlatformAuthModule } from './modules/platform-auth/platform-auth.module';
@@ -24,6 +25,7 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     PrismaModule,
     CoreModule,
+    DashboardModule,
     HealthModule,
     PlatformAuthModule,
     PlatformCompaniesModule,
