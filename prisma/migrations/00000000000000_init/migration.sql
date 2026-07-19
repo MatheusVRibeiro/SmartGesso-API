@@ -1,0 +1,2 @@
+-- Initial SmartGesso schema is represented in prisma/schema.prisma.
+-- Run `npm run db:migrate` against MySQL 8.4 LTS to create an environment-specific migration.

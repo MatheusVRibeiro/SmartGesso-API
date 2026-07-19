@@ -1,0 +1,325 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlatformAdminStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum BillingType {
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  ANNUAL
+  CUSTOM
+}
+
+enum PlanStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  GRACE_PERIOD
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum InstallmentStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model PlatformAdmin {
+  id           String              @id @default(uuid()) @db.Char(36)
+  name         String
+  email        String              @unique
+  passwordHash String              @db.VarChar(255)
+  status       PlatformAdminStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  deletedAt    DateTime?
+}
+
+model Company {
+  id                    String           @id @default(uuid()) @db.Char(36)
+  legalName             String
+  tradeName             String
+  documentType          String
+  document              String           @unique
+  stateRegistration     String?
+  municipalRegistration String?
+  email                 String?
+  phone                 String?
+  whatsapp              String?
+  status                CompanyStatus    @default(ACTIVE)
+  timezone              String           @default("America/Sao_Paulo")
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  deletedAt             DateTime?
+  addresses             CompanyAddress[]
+  branding              CompanyBranding?
+  subscriptions         Subscription[]
+  members               CompanyMember[]
+}
+
+model CompanyAddress {
+  id         String   @id @default(uuid()) @db.Char(36)
+  companyId  String   @db.Char(36)
+  type       String
+  postalCode String?
+  street     String
+  number     String?
+  complement String?
+  district   String?
+  city       String
+  state      String
+  country    String   @default("BR")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  company    Company  @relation(fields: [companyId], references: [id])
+}
+
+model CompanyBranding {
+  id                  String   @id @default(uuid()) @db.Char(36)
+  companyId           String   @unique @db.Char(36)
+  displayName         String
+  logoUrl             String?
+  primaryColor        String?
+  secondaryColor      String?
+  commercialEmail     String?
+  commercialPhone     String?
+  commercialWhatsapp  String?
+  website             String?
+  instagram           String?
+  quoteFooter         String?
+  defaultWarrantyText String?
+  pixKey              String?
+  bankInformation     String?  @db.Text
+  showSmartGessoBrand Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  company             Company  @relation(fields: [companyId], references: [id])
+}
+
+model Plan {
+  id                  String         @id @default(uuid()) @db.Char(36)
+  name                String
+  code                String         @unique
+  description         String?        @db.Text
+  billingType         BillingType
+  defaultPrice        Decimal        @db.Decimal(15, 2)
+  maxUsers            Int
+  maxStorageMb        Int
+  features            Json
+  showSmartGessoBrand Boolean        @default(true)
+  status              PlanStatus     @default(ACTIVE)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  subscriptions       Subscription[]
+}
+
+model Subscription {
+  id                       String                    @id @default(uuid()) @db.Char(36)
+  companyId                String                    @db.Char(36)
+  planId                   String                    @db.Char(36)
+  startDate                DateTime
+  endDate                  DateTime
+  gracePeriodEnd           DateTime
+  status                   SubscriptionStatus
+  billingType              BillingType
+  agreedPrice              Decimal                   @db.Decimal(15, 2)
+  autoRenew                Boolean                   @default(false)
+  cancelledAt              DateTime?
+  cancellationReason       String?
+  suspendedAt              DateTime?
+  suspensionReason         String?
+  reactivatedAt            DateTime?
+  createdByPlatformAdminId String                    @db.Char(36)
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  company                  Company                   @relation(fields: [companyId], references: [id])
+  plan                     Plan                      @relation(fields: [planId], references: [id])
+  installments             SubscriptionInstallment[]
+}
+
+model SubscriptionInstallment {
+  id                String                @id @default(uuid()) @db.Char(36)
+  subscriptionId    String                @db.Char(36)
+  companyId         String                @db.Char(36)
+  installmentNumber Int
+  description       String
+  amount            Decimal               @db.Decimal(15, 2)
+  dueDate           DateTime
+  paidAmount        Decimal               @default(0) @db.Decimal(15, 2)
+  paidAt            DateTime?
+  status            InstallmentStatus
+  paymentMethod     String?
+  externalReference String?
+  notes             String?               @db.Text
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  subscription      Subscription          @relation(fields: [subscriptionId], references: [id])
+  payments          SubscriptionPayment[]
+}
+
+model SubscriptionPayment {
+  id                        String                  @id @default(uuid()) @db.Char(36)
+  subscriptionInstallmentId String                  @db.Char(36)
+  companyId                 String                  @db.Char(36)
+  amount                    Decimal                 @db.Decimal(15, 2)
+  paymentMethod             String?
+  paidAt                    DateTime
+  reference                 String?
+  notes                     String?
+  createdByPlatformAdminId  String                  @db.Char(36)
+  createdAt                 DateTime                @default(now())
+  installment               SubscriptionInstallment @relation(fields: [subscriptionInstallmentId], references: [id])
+}
+
+model SubscriptionHistory {
+  id                       String              @id @default(uuid()) @db.Char(36)
+  subscriptionId           String              @db.Char(36)
+  companyId                String              @db.Char(36)
+  previousStatus           SubscriptionStatus?
+  newStatus                SubscriptionStatus
+  reason                   String
+  metadata                 Json?
+  changedByPlatformAdminId String?             @db.Char(36)
+  createdAt                DateTime            @default(now())
+}
+
+model User {
+  id              String          @id @default(uuid()) @db.Char(36)
+  name            String
+  email           String          @unique
+  passwordHash    String
+  phone           String?
+  status          UserStatus      @default(INVITED)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+  members         CompanyMember[]
+}
+
+model CompanyMember {
+  id        String       @id @default(uuid()) @db.Char(36)
+  companyId String       @db.Char(36)
+  userId    String       @db.Char(36)
+  status    UserStatus   @default(INVITED)
+  isOwner   Boolean      @default(false)
+  joinedAt  DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  company   Company      @relation(fields: [companyId], references: [id])
+  user      User         @relation(fields: [userId], references: [id])
+  roles     MemberRole[]
+
+  @@unique([companyId, userId])
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Char(36)
+  code        String           @unique
+  name        String
+  permissions RolePermission[]
+  members     MemberRole[]
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Char(36)
+  code        String           @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model MemberRole {
+  memberId String        @db.Char(36)
+  roleId   String        @db.Char(36)
+  member   CompanyMember @relation(fields: [memberId], references: [id])
+  role     Role          @relation(fields: [roleId], references: [id])
+
+  @@id([memberId, roleId])
+}
+
+model RolePermission {
+  roleId       String     @db.Char(36)
+  permissionId String     @db.Char(36)
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model UserSession {
+  id               String    @id @default(uuid()) @db.Char(36)
+  userId           String?   @db.Char(36)
+  platformAdminId  String?   @db.Char(36)
+  activeCompanyId  String?   @db.Char(36)
+  refreshTokenHash String
+  deviceId         String?
+  deviceName       String?
+  ipAddress        String?
+  userAgent        String?
+  expiresAt        DateTime
+  lastUsedAt       DateTime?
+  revokedAt        DateTime?
+  revocationReason String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model OwnerInvitation {
+  id         String    @id @default(uuid()) @db.Char(36)
+  companyId  String    @db.Char(36)
+  email      String
+  name       String
+  tokenHash  String
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Char(36)
+  companyId String?  @db.Char(36)
+  actorType String
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
