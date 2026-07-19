@@ -2,7 +2,6 @@ import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/database/prisma.service';
 import { randomUUID } from 'node:crypto';
 
 describe('SmartGesso API (Prisma)', () => {
@@ -17,7 +16,6 @@ describe('SmartGesso API (Prisma)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     app.setGlobalPrefix('api/v1');
     await app.init();
-    prisma = app.get(PrismaService);
   });
 
   afterAll(async () => {
