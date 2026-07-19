@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -30,24 +31,33 @@ export class PlatformAdminGuard implements CanActivate {
     const token = bearer(req);
     if (!token) throw new UnauthorizedException('Token ausente');
 
-    const payload = this.jwt.verify<TokenPayload>(token, {
-      secret: process.env.PLATFORM_JWT_ACCESS_SECRET || 'dev-platform-access',
-    });
+    try {
+      const decoded = this.jwt.decode(token) as TokenPayload | null;
+      if (!decoded) throw new UnauthorizedException('Token inválido');
 
-    if (payload.type !== 'platform')
-      throw new UnauthorizedException('Rota exclusiva da plataforma');
+      if (decoded.type !== 'platform') {
+        throw new ForbiddenException('Rota exclusiva da plataforma');
+      }
 
-    const admin = await this.prisma.platformAdmin.findFirst({
-      where: {
-        id: payload.sub,
-        status: 'ACTIVE',
-        deletedAt: null,
-      },
-    });
+      const payload = this.jwt.verify<TokenPayload>(token, {
+        secret: process.env.PLATFORM_JWT_ACCESS_SECRET || 'dev-platform-access',
+      });
 
-    if (!admin) throw new UnauthorizedException('Administrador inválido');
+      const admin = await this.prisma.platformAdmin.findFirst({
+        where: {
+          id: payload.sub,
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+      });
 
-    req.platformAdmin = admin;
-    return true;
+      if (!admin) throw new UnauthorizedException('Administrador inválido');
+
+      req.platformAdmin = admin;
+      return true;
+    } catch (err) {
+      if (err instanceof UnauthorizedException || err instanceof ForbiddenException) throw err;
+      throw new UnauthorizedException('Token inválido ou expirado');
+    }
   }
 }

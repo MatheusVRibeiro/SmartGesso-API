@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -30,25 +31,34 @@ export class JwtAuthGuard implements CanActivate {
     const token = bearer(req);
     if (!token) throw new UnauthorizedException('Token ausente');
 
-    const payload = this.jwt.verify<TokenPayload>(token, {
-      secret: process.env.JWT_ACCESS_SECRET || 'dev-user-access',
-    });
+    try {
+      const decoded = this.jwt.decode(token) as TokenPayload | null;
+      if (!decoded) throw new UnauthorizedException('Token inválido');
 
-    if (payload.type !== 'user')
-      throw new UnauthorizedException('Token inválido para aplicativo');
+      if (decoded.type !== 'user') {
+        throw new ForbiddenException('Token inválido para aplicativo');
+      }
 
-    const user = await this.prisma.user.findFirst({
-      where: {
-        id: payload.sub,
-        status: 'ACTIVE',
-        deletedAt: null,
-      },
-    });
+      const payload = this.jwt.verify<TokenPayload>(token, {
+        secret: process.env.JWT_ACCESS_SECRET || 'dev-user-access',
+      });
 
-    if (!user) throw new UnauthorizedException('Usuário inválido');
+      const user = await this.prisma.user.findFirst({
+        where: {
+          id: payload.sub,
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+      });
 
-    req.user = user;
-    req.companyId = payload.companyId ?? null;
-    return true;
+      if (!user) throw new UnauthorizedException('Usuário inválido');
+
+      req.user = user;
+      req.companyId = payload.companyId ?? null;
+      return true;
+    } catch (err) {
+      if (err instanceof UnauthorizedException || err instanceof ForbiddenException) throw err;
+      throw new UnauthorizedException('Token inválido ou expirado');
+    }
   }
 }
