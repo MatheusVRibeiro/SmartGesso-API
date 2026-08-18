@@ -96,6 +96,8 @@ model Company {
   products              Product[]
   services              Service[]
   materials             Material[]
+  measurements          Measurement[]
+  compositions          Composition[]
 }
 
 model CompanyAddress {
@@ -389,6 +391,7 @@ model Work {
   deletedAt   DateTime?
   company     Company    @relation(fields: [companyId], references: [id])
   client      Client     @relation(fields: [clientId], references: [id])
+  measurements Measurement[]
 
   @@index([companyId])
   @@index([clientId])
@@ -445,4 +448,79 @@ model Material {
   company     Company           @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
+}
+
+// ─── Fase 3 — Medições e Composições ───────────────────────────────────────
+
+enum MeasurementApplicationType {
+  DRYWALL
+  FORRO
+  PAREDE
+  SANCA
+  REBAIXAMENTO
+  OUTRO
+}
+
+model Measurement {
+  id               String                      @id @default(uuid()) @db.Char(36)
+  companyId        String                      @db.Char(36)
+  workId           String                      @db.Char(36)
+  environmentName  String
+  applicationType  MeasurementApplicationType  @default(DRYWALL)
+  length           Decimal?                    @db.Decimal(15, 2)
+  width            Decimal?                    @db.Decimal(15, 2)
+  ceilingHeight    Decimal?                    @db.Decimal(15, 2)
+  area             Decimal?                    @db.Decimal(15, 2)
+  perimeter        Decimal?                    @db.Decimal(15, 2)
+  doors            Int                         @default(0)
+  windows          Int                         @default(0)
+  cutouts          Int                         @default(0)
+  fixtures         Int                         @default(0)
+  hasCove          Boolean                     @default(false)
+  hasDropCeiling   Boolean                     @default(false)
+  observations     String?                     @db.Text
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+  deletedAt        DateTime?
+  company          Company                     @relation(fields: [companyId], references: [id])
+  work             Work                        @relation(fields: [workId], references: [id])
+
+  @@index([companyId])
+  @@index([workId])
+}
+
+enum CompositionStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Composition {
+  id              String            @id @default(uuid()) @db.Char(36)
+  companyId       String            @db.Char(36)
+  code            String
+  name            String
+  version         Int               @default(1)
+  applicationType MeasurementApplicationType
+  status          CompositionStatus @default(ACTIVE)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+  company         Company           @relation(fields: [companyId], references: [id])
+  items           CompositionItem[]
+
+  @@index([companyId])
+  @@unique([companyId, code, version])
+}
+
+model CompositionItem {
+  id            String      @id @default(uuid()) @db.Char(36)
+  compositionId String      @db.Char(36)
+  materialType  String
+  name          String
+  unit          String      @default("un")
+  formula       Json
+  createdAt     DateTime    @default(now())
+  composition   Composition @relation(fields: [compositionId], references: [id])
+
+  @@index([compositionId])
 }

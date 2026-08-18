@@ -11,9 +11,11 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { ClientsModule } from './modules/clients/clients.module';
 import { CompaniesModule } from './modules/companies/companies.module';
+import { CompositionsModule } from './modules/compositions/compositions.module';
 import { CoreModule } from './modules/core/core.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthModule } from './modules/health/health.module';
+import { MeasurementsModule } from './modules/measurements/measurements.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { PlatformAuthModule } from './modules/platform-auth/platform-auth.module';
 import { PlatformCompaniesModule } from './modules/platform-companies/platform-companies.module';
@@ -39,6 +41,8 @@ import { WorksModule } from './modules/works/works.module';
     CompaniesModule,
     CatalogModule,
     WorksModule,
+    MeasurementsModule,
+    CompositionsModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })
