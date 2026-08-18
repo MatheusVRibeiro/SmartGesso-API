@@ -91,6 +91,11 @@ model Company {
   branding              CompanyBranding?
   subscriptions         Subscription[]
   members               CompanyMember[]
+  clients               Client[]
+  works                 Work[]
+  products              Product[]
+  services              Service[]
+  materials             Material[]
 }
 
 model CompanyAddress {
@@ -322,4 +327,122 @@ model AuditLog {
   entityId  String?
   metadata  Json?
   createdAt DateTime @default(now())
+}
+
+// ─── Fase 2 — Clientes e Catálogo ──────────────────────────────────────────
+
+enum ClientType {
+  FISICA
+  JURIDICA
+}
+
+enum WorkStatus {
+  PLANEJADA
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+enum CatalogItemStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Client {
+  id          String     @id @default(uuid()) @db.Char(36)
+  companyId   String     @db.Char(36)
+  type        ClientType @default(FISICA)
+  name        String
+  document    String?
+  email       String?
+  phone       String?
+  whatsapp    String?
+  observations String?   @db.Text
+  status      String     @default("ACTIVE")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+  company     Company    @relation(fields: [companyId], references: [id])
+  works       Work[]
+
+  @@index([companyId])
+  @@index([name])
+}
+
+model Work {
+  id          String     @id @default(uuid()) @db.Char(36)
+  companyId   String     @db.Char(36)
+  clientId    String     @db.Char(36)
+  name        String
+  reference   String?
+  postalCode  String?
+  street      String?
+  number      String?
+  complement  String?
+  district    String?
+  city        String?
+  state       String?
+  status      WorkStatus @default(PLANEJADA)
+  observations String?   @db.Text
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+  company     Company    @relation(fields: [companyId], references: [id])
+  client      Client     @relation(fields: [clientId], references: [id])
+
+  @@index([companyId])
+  @@index([clientId])
+}
+
+model Product {
+  id          String            @id @default(uuid()) @db.Char(36)
+  companyId   String            @db.Char(36)
+  name        String
+  description String?
+  unit        String            @default("un")
+  price       Decimal?          @db.Decimal(15, 2)
+  cost        Decimal?          @db.Decimal(15, 2)
+  status      CatalogItemStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  deletedAt   DateTime?
+  company     Company           @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+}
+
+model Service {
+  id          String            @id @default(uuid()) @db.Char(36)
+  companyId   String            @db.Char(36)
+  name        String
+  description String?
+  unit        String            @default("serv")
+  price       Decimal?          @db.Decimal(15, 2)
+  cost        Decimal?          @db.Decimal(15, 2)
+  status      CatalogItemStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  deletedAt   DateTime?
+  company     Company           @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+}
+
+model Material {
+  id          String            @id @default(uuid()) @db.Char(36)
+  companyId   String            @db.Char(36)
+  name        String
+  description String?
+  unit        String            @default("un")
+  price       Decimal?          @db.Decimal(15, 2)
+  cost        Decimal?          @db.Decimal(15, 2)
+  stockQty    Decimal?          @db.Decimal(15, 3) @default(0)
+  minStockQty Decimal?          @db.Decimal(15, 3) @default(0)
+  status      CatalogItemStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  deletedAt   DateTime?
+  company     Company           @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
