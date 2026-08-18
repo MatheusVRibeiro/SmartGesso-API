@@ -98,6 +98,7 @@ model Company {
   materials             Material[]
   measurements          Measurement[]
   compositions          Composition[]
+  quotes                Quote[]
 }
 
 model CompanyAddress {
@@ -366,6 +367,7 @@ model Client {
   deletedAt   DateTime?
   company     Company    @relation(fields: [companyId], references: [id])
   works       Work[]
+  quotes      Quote[]
 
   @@index([companyId])
   @@index([name])
@@ -392,6 +394,7 @@ model Work {
   company     Company    @relation(fields: [companyId], references: [id])
   client      Client     @relation(fields: [clientId], references: [id])
   measurements Measurement[]
+  quotes        Quote[]
 
   @@index([companyId])
   @@index([clientId])
@@ -523,4 +526,76 @@ model CompositionItem {
   composition   Composition @relation(fields: [compositionId], references: [id])
 
   @@index([compositionId])
+}
+
+// ─── Fase 4 — Orçamentos ───────────────────────────────────────────────────
+
+enum QuoteStatus {
+  RASCUNHO
+  ENVIADO
+  APROVADO
+  REJEITADO
+  CANCELADO
+}
+
+enum QuotePaymentMethod {
+  AVISTA
+  AVISTA_DESCONTO
+  ENTRADA_SALDO
+  QUINZENAL_2X
+  MENSAL
+  PARCELADO
+  PERSONALIZADO
+}
+
+enum QuoteItemType {
+  PRODUTO
+  SERVICO
+  MATERIAL
+  MAO_DE_OBRA
+  TRANSPORTE
+}
+
+model Quote {
+  id            String             @id @default(uuid()) @db.Char(36)
+  companyId     String             @db.Char(36)
+  clientId      String             @db.Char(36)
+  workId        String?            @db.Char(36)
+  quoteNumber   Int
+  version       Int                @default(1)
+  status        QuoteStatus        @default(RASCUNHO)
+  subtotal      Decimal            @default(0) @db.Decimal(15, 2)
+  discount      Decimal            @default(0) @db.Decimal(15, 2)
+  marginPct     Decimal            @default(0) @db.Decimal(5, 2)
+  total         Decimal            @default(0) @db.Decimal(15, 2)
+  paymentMethod QuotePaymentMethod @default(AVISTA)
+  observations  String?            @db.Text
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  deletedAt     DateTime?
+  company       Company            @relation(fields: [companyId], references: [id])
+  client        Client             @relation(fields: [clientId], references: [id])
+  work          Work?              @relation(fields: [workId], references: [id])
+  items         QuoteItem[]
+
+  @@index([companyId])
+  @@index([clientId])
+  @@index([workId])
+  @@unique([companyId, quoteNumber, version])
+}
+
+model QuoteItem {
+  id          String       @id @default(uuid()) @db.Char(36)
+  quoteId     String       @db.Char(36)
+  itemType    QuoteItemType
+  name        String
+  description String?
+  quantity    Decimal      @default(1) @db.Decimal(15, 3)
+  unit        String       @default("un")
+  unitPrice   Decimal      @default(0) @db.Decimal(15, 2)
+  total       Decimal      @default(0) @db.Decimal(15, 2)
+  createdAt   DateTime     @default(now())
+  quote       Quote        @relation(fields: [quoteId], references: [id])
+
+  @@index([quoteId])
 }

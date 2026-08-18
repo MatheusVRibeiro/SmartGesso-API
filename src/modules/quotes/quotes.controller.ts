@@ -1,0 +1,71 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
+import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
+import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { QuotesService } from './quotes.service';
+import { QuotesPdfService } from './quotes-pdf.service';
+import { CreateQuoteDto } from './dto/create-quote.dto';
+import { UpdateQuoteDto } from './dto/update-quote.dto';
+
+@ApiTags('quotes')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@Controller('quotes')
+export class QuotesController {
+  constructor(
+    private readonly quotesService: QuotesService,
+    private readonly quotesPdfService: QuotesPdfService,
+  ) {}
+
+  @Get()
+  findAll(@Req() r: any, @Query('search') search?: string) {
+    return this.quotesService.findAll(r.company.id, search);
+  }
+
+  @Get(':id')
+  findOne(@Req() r: any, @Param('id') id: string) {
+    return this.quotesService.findOne(r.company.id, id);
+  }
+
+  @Post()
+  create(@Req() r: any, @Body() dto: CreateQuoteDto) {
+    return this.quotesService.create(r.company.id, dto);
+  }
+
+  @Patch(':id')
+  update(@Req() r: any, @Param('id') id: string, @Body() dto: UpdateQuoteDto) {
+    return this.quotesService.update(r.company.id, id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Req() r: any, @Param('id') id: string) {
+    return this.quotesService.remove(r.company.id, id);
+  }
+
+  @Post(':id/version')
+  createVersion(@Req() r: any, @Param('id') id: string) {
+    return this.quotesService.createVersion(r.company.id, id);
+  }
+
+  @Get(':id/pdf')
+  async generatePdf(@Req() r: any, @Param('id') id: string, @Res() res: Response) {
+    const pdf = await this.quotesPdfService.generatePdf(id, r.company.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="orcamento-${id}.pdf"`);
+    pdf.pipe(res);
+  }
+}

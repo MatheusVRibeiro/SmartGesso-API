@@ -21,6 +21,7 @@ import { PlatformAuthModule } from './modules/platform-auth/platform-auth.module
 import { PlatformCompaniesModule } from './modules/platform-companies/platform-companies.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { WorksModule } from './modules/works/works.module';
+import { QuotesModule } from './modules/quotes/quotes.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { WorksModule } from './modules/works/works.module';
     WorksModule,
     MeasurementsModule,
     CompositionsModule,
+    QuotesModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })
