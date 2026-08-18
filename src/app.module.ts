@@ -22,6 +22,8 @@ import { PlatformCompaniesModule } from './modules/platform-companies/platform-c
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { WorksModule } from './modules/works/works.module';
 import { QuotesModule } from './modules/quotes/quotes.module';
+import { ProductionOrdersModule } from './modules/production-orders/production-orders.module';
+import { ServiceOrdersModule } from './modules/service-orders/service-orders.module';
 
 @Module({
   imports: [
@@ -45,6 +47,8 @@ import { QuotesModule } from './modules/quotes/quotes.module';
     MeasurementsModule,
     CompositionsModule,
     QuotesModule,
+    ProductionOrdersModule,
+    ServiceOrdersModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })

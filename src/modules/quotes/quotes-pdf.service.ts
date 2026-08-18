@@ -1,6 +1,6 @@
-// @ts-nocheck — pdfkit types incompletos no ambiente; código JS funciona corretamente
+// @ts-nocheck — pdfkit CommonJS, types incompletos
 import { Injectable, NotFoundException } from '@nestjs/common';
-import PDFDocument from 'pdfkit';
+const PDFDocument = require('pdfkit');
 import { PassThrough } from 'stream';
 import { PrismaService } from '../../database/prisma.service';
 

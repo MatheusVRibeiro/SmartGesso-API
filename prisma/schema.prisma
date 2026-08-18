@@ -99,6 +99,8 @@ model Company {
   measurements          Measurement[]
   compositions          Composition[]
   quotes                Quote[]
+  productionOrders      ProductionOrder[]
+  serviceOrders         ServiceOrder[]
 }
 
 model CompanyAddress {
@@ -368,6 +370,8 @@ model Client {
   company     Company    @relation(fields: [companyId], references: [id])
   works       Work[]
   quotes      Quote[]
+  productionOrders ProductionOrder[]
+  serviceOrders    ServiceOrder[]
 
   @@index([companyId])
   @@index([name])
@@ -395,6 +399,8 @@ model Work {
   client      Client     @relation(fields: [clientId], references: [id])
   measurements Measurement[]
   quotes        Quote[]
+  serviceOrders ServiceOrder[]
+  productionOrders ProductionOrder[]
 
   @@index([companyId])
   @@index([clientId])
@@ -598,4 +604,100 @@ model QuoteItem {
   quote       Quote        @relation(fields: [quoteId], references: [id])
 
   @@index([quoteId])
+}
+
+// ─── Fase 5 — Ordens de Produção ──────────────────────────────────────────
+
+enum ProductionOrderStatus {
+  PENDENTE
+  EM_PRODUCAO
+  CONCLUIDA
+  CANCELADA
+}
+
+model ProductionOrder {
+  id               String                @id @default(uuid()) @db.Char(36)
+  companyId        String                @db.Char(36)
+  clientId         String?               @db.Char(36)
+  workId           String?               @db.Char(36)
+  code             Int
+  status           ProductionOrderStatus @default(PENDENTE)
+  dueDate          DateTime?
+  completedDate    DateTime?
+  responsiblePerson String?
+  observations     String?               @db.Text
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  deletedAt        DateTime?
+  company          Company               @relation(fields: [companyId], references: [id])
+  client           Client?               @relation(fields: [clientId], references: [id])
+  work             Work?                 @relation(fields: [workId], references: [id])
+  items            ProductionOrderItem[]
+
+  @@index([companyId])
+  @@index([clientId])
+  @@index([workId])
+  @@unique([companyId, code])
+}
+
+model ProductionOrderItem {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  productionOrderId  String   @db.Char(36)
+  productName        String
+  quantity           Decimal  @db.Decimal(15, 3)
+  unit               String   @default("un")
+  producedQty        Decimal  @default(0) @db.Decimal(15, 3)
+  wastedQty          Decimal  @default(0) @db.Decimal(15, 3)
+  status             String   @default("PENDENTE")
+  createdAt          DateTime @default(now())
+  productionOrder    ProductionOrder @relation(fields: [productionOrderId], references: [id])
+
+  @@index([productionOrderId])
+}
+
+// ─── Fase 6 — Ordens de Serviço ────────────────────────────────────────
+
+enum ServiceOrderStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+model ServiceOrder {
+  id              String              @id @default(uuid()) @db.Char(36)
+  companyId       String              @db.Char(36)
+  clientId        String              @db.Char(36)
+  workId          String?             @db.Char(36)
+  code            Int
+  status          ServiceOrderStatus  @default(PENDENTE)
+  scheduledDate   DateTime?
+  completedDate   DateTime?
+  observations    String?             @db.Text
+  checklist       Json?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  deletedAt       DateTime?
+  company         Company             @relation(fields: [companyId], references: [id])
+  client          Client              @relation(fields: [clientId], references: [id])
+  work            Work?               @relation(fields: [workId], references: [id])
+  materials       ServiceOrderMaterial[]
+
+  @@index([companyId])
+  @@index([clientId])
+  @@index([workId])
+  @@unique([companyId, code])
+}
+
+model ServiceOrderMaterial {
+  id              String      @id @default(uuid()) @db.Char(36)
+  serviceOrderId  String      @db.Char(36)
+  materialName    String
+  quantity        Decimal     @db.Decimal(15, 3)
+  unit            String      @default("un")
+  usedAt          DateTime?
+  createdAt       DateTime    @default(now())
+  serviceOrder    ServiceOrder @relation(fields: [serviceOrderId], references: [id])
+
+  @@index([serviceOrderId])
 }
