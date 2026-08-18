@@ -26,6 +26,7 @@ import { QuotesModule } from './modules/quotes/quotes.module';
 import { ProductionOrdersModule } from './modules/production-orders/production-orders.module';
 import { ServiceOrdersModule } from './modules/service-orders/service-orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { CompanyDashboardModule } from './modules/company-dashboard/company-dashboard.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
     CoreModule,
     DashboardModule,
     HealthModule,
+    CompanyDashboardModule,
     ExpensesModule,
     PlatformAuthModule,
     PlatformCompaniesModule,
