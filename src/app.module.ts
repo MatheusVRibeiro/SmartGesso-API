@@ -14,6 +14,7 @@ import { CompaniesModule } from './modules/companies/companies.module';
 import { CompositionsModule } from './modules/compositions/compositions.module';
 import { CoreModule } from './modules/core/core.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
 import { HealthModule } from './modules/health/health.module';
 import { MeasurementsModule } from './modules/measurements/measurements.module';
 import { PlansModule } from './modules/plans/plans.module';
@@ -24,6 +25,7 @@ import { WorksModule } from './modules/works/works.module';
 import { QuotesModule } from './modules/quotes/quotes.module';
 import { ProductionOrdersModule } from './modules/production-orders/production-orders.module';
 import { ServiceOrdersModule } from './modules/service-orders/service-orders.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 @Module({
   imports: [
@@ -35,6 +37,7 @@ import { ServiceOrdersModule } from './modules/service-orders/service-orders.mod
     CoreModule,
     DashboardModule,
     HealthModule,
+    ExpensesModule,
     PlatformAuthModule,
     PlatformCompaniesModule,
     PlansModule,
@@ -49,6 +52,7 @@ import { ServiceOrdersModule } from './modules/service-orders/service-orders.mod
     QuotesModule,
     ProductionOrdersModule,
     ServiceOrdersModule,
+    PaymentsModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })
