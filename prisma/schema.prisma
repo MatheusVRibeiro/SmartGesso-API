@@ -364,6 +364,13 @@ model Client {
   email       String?
   phone       String?
   whatsapp    String?
+  postalCode  String?
+  street      String?
+  number      String?
+  complement  String?
+  district    String?
+  city        String?
+  state       String?
   observations String?   @db.Text
   status      String     @default("ACTIVE")
   createdAt   DateTime   @default(now())
