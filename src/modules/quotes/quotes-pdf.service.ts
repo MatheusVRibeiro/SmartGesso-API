@@ -111,9 +111,12 @@ export class QuotesPdfService {
   private addStatusBadge(doc: PDFDocument, status: string) {
     const statusMap: Record<string, string> = {
       RASCUNHO: 'Rascunho',
+      PRONTO_PARA_ENVIAR: 'Pronto para enviar',
       ENVIADO: 'Enviado',
+      AGUARDANDO_APROVACAO: 'Aguardando aprovação',
       APROVADO: 'Aprovado',
-      REJEITADO: 'Rejeitado',
+      REJEITADO: 'Não aprovado',
+      VENCIDO: 'Vencido',
       CANCELADO: 'Cancelado',
     };
 

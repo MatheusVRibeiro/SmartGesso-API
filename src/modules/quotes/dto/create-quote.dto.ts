@@ -1,8 +1,12 @@
 import {
   IsArray,
+  IsDateString,
   IsEnum,
+  IsIn,
+  IsInt,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -15,6 +19,52 @@ import {
   QuotePaymentMethod,
   QuoteStatus,
 } from '@prisma/client';
+
+/** Formas de pagamento aceitas no campo paymentTerms (V3). */
+export const QUOTE_PAYMENT_TERMS = [
+  'AVISTA',
+  'AVISTA_DESCONTO',
+  'ENTRADA_SALDO',
+  'PARCELADO',
+  'QUINZENAL',
+  'MENSAL',
+  'PERSONALIZADO',
+] as const;
+
+/** Endereço/local onde o serviço será executado (contexto do orçamento). */
+export class LocalAddressDto {
+  @IsOptional()
+  @IsString()
+  cep?: string;
+
+  @IsOptional()
+  @IsString()
+  rua?: string;
+
+  @IsOptional()
+  @IsString()
+  numero?: string;
+
+  @IsOptional()
+  @IsString()
+  complemento?: string;
+
+  @IsOptional()
+  @IsString()
+  bairro?: string;
+
+  @IsOptional()
+  @IsString()
+  cidade?: string;
+
+  @IsOptional()
+  @IsString()
+  estado?: string;
+
+  @IsOptional()
+  @IsString()
+  referencia?: string;
+}
 
 /** DTO para cada item do orçamento. */
 export class QuoteItemDto {
@@ -67,6 +117,47 @@ export class CreateQuoteDto {
   @IsOptional()
   @IsEnum(QuotePaymentMethod)
   paymentMethod?: QuotePaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(QUOTE_PAYMENT_TERMS)
+  paymentTerms?: string;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => LocalAddressDto)
+  localAddress?: LocalAddressDto;
+
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  durationDays?: number;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  deadlineDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  visitDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  measurementDate?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  warrantyDays?: number;
 
   @IsOptional()
   @IsString()

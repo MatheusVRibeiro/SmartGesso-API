@@ -548,9 +548,12 @@ model CompositionItem {
 
 enum QuoteStatus {
   RASCUNHO
+  PRONTO_PARA_ENVIAR
   ENVIADO
+  AGUARDANDO_APROVACAO
   APROVADO
   REJEITADO
+  VENCIDO
   CANCELADO
 }
 
@@ -573,31 +576,53 @@ enum QuoteItemType {
 }
 
 model Quote {
-  id            String             @id @default(uuid()) @db.Char(36)
-  companyId     String             @db.Char(36)
-  clientId      String             @db.Char(36)
-  workId        String?            @db.Char(36)
-  quoteNumber   Int
-  version       Int                @default(1)
-  status        QuoteStatus        @default(RASCUNHO)
-  subtotal      Decimal            @default(0) @db.Decimal(15, 2)
-  discount      Decimal            @default(0) @db.Decimal(15, 2)
-  marginPct     Decimal            @default(0) @db.Decimal(5, 2)
-  total         Decimal            @default(0) @db.Decimal(15, 2)
-  paymentMethod QuotePaymentMethod @default(AVISTA)
-  observations  String?            @db.Text
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  deletedAt     DateTime?
-  company       Company            @relation(fields: [companyId], references: [id])
-  client        Client             @relation(fields: [clientId], references: [id])
-  work          Work?              @relation(fields: [workId], references: [id])
-  items         QuoteItem[]
+  id              String             @id @default(uuid()) @db.Char(36)
+  companyId       String             @db.Char(36)
+  clientId        String             @db.Char(36)
+  workId          String?            @db.Char(36)
+  quoteNumber     Int
+  version         Int                @default(1)
+  status          QuoteStatus        @default(RASCUNHO)
+  subtotal        Decimal            @default(0) @db.Decimal(15, 2)
+  discount        Decimal            @default(0) @db.Decimal(15, 2)
+  marginPct       Decimal            @default(0) @db.Decimal(5, 2)
+  total           Decimal            @default(0) @db.Decimal(15, 2)
+  paymentMethod   QuotePaymentMethod @default(AVISTA)
+  paymentTerms    String?
+  localAddress    Json?
+  startDate       DateTime?
+  durationDays    Int?
+  endDate         DateTime?
+  deadlineDate    DateTime?
+  visitDate       DateTime?
+  measurementDate DateTime?
+  warrantyDays    Int?
+  observations    String?            @db.Text
+  convertedAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
+  company         Company            @relation(fields: [companyId], references: [id])
+  client          Client             @relation(fields: [clientId], references: [id])
+  work            Work?              @relation(fields: [workId], references: [id])
+  items           QuoteItem[]
+  history         QuoteHistory[]
 
   @@index([companyId])
   @@index([clientId])
   @@index([workId])
   @@unique([companyId, quoteNumber, version])
+}
+
+model QuoteHistory {
+  id        String      @id @default(uuid()) @db.Char(36)
+  quoteId   String      @db.Char(36)
+  status    QuoteStatus
+  changedAt DateTime    @default(now())
+  note      String?
+  quote     Quote       @relation(fields: [quoteId], references: [id])
+
+  @@index([quoteId])
 }
 
 model QuoteItem {

@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { QuoteStatus } from '@prisma/client';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
@@ -32,8 +33,12 @@ export class QuotesController {
   ) {}
 
   @Get()
-  findAll(@Req() r: any, @Query('search') search?: string) {
-    return this.quotesService.findAll(r.company.id, search);
+  findAll(
+    @Req() r: any,
+    @Query('search') search?: string,
+    @Query('status') status?: QuoteStatus,
+  ) {
+    return this.quotesService.findAll(r.company.id, search, status);
   }
 
   @Get(':id')
@@ -61,11 +66,45 @@ export class QuotesController {
     return this.quotesService.createVersion(r.company.id, id);
   }
 
+  @Post(':id/convert-to-service')
+  convertToService(@Req() r: any, @Param('id') id: string) {
+    return this.quotesService.convertToService(r.company.id, id);
+  }
+
+  @Post(':id/approve')
+  @ApiOperation({ summary: 'Aprova o orçamento (status APROVADO + histórico)' })
+  approve(@Req() r: any, @Param('id') id: string) {
+    return this.quotesService.approve(r.company.id, id);
+  }
+
+  @Post(':id/reject')
+  @ApiOperation({ summary: 'Rejeita o orçamento (status REJEITADO + histórico)' })
+  reject(
+    @Req() r: any,
+    @Param('id') id: string,
+    @Body('note') note?: string,
+  ) {
+    return this.quotesService.reject(r.company.id, id, note);
+  }
+
+  @Post(':id/duplicate')
+  @ApiOperation({
+    summary: 'Duplica o orçamento (novo quoteNumber, status RASCUNHO)',
+  })
+  duplicate(@Req() r: any, @Param('id') id: string) {
+    return this.quotesService.duplicate(r.company.id, id);
+  }
+
   @Get(':id/pdf')
   async generatePdf(@Req() r: any, @Param('id') id: string, @Res() res: Response) {
-    const pdf = await this.quotesPdfService.generatePdf(id, r.company.id);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="orcamento-${id}.pdf"`);
-    pdf.pipe(res);
+    try {
+      const pdf = await this.quotesPdfService.generatePdf(id, r.company.id);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="orcamento-${id}.pdf"`);
+      pdf.pipe(res);
+    } catch (error) {
+      console.error('PDF ERROR:', error);
+      res.status(500).json({ statusCode: 500, message: 'Erro ao gerar PDF', detail: String(error) });
+    }
   }
 }
