@@ -27,6 +27,21 @@ enum UserStatus {
   BLOCKED
 }
 
+enum CompanyUserRole {
+  COMPANY_OWNER
+  MANAGER
+  SALES
+  FINANCE
+  INSTALLER
+  PRODUCTION
+}
+
+enum CompanyMemberStatus {
+  ATIVO
+  INATIVO
+  CONVIDADO
+}
+
 enum BillingType {
   MONTHLY
   QUARTERLY
@@ -72,20 +87,20 @@ model PlatformAdmin {
 }
 
 model Company {
-  id                    String           @id @default(uuid()) @db.Char(36)
+  id                    String              @id @default(uuid()) @db.Char(36)
   legalName             String
   tradeName             String
   documentType          String
-  document              String           @unique
+  document              String              @unique
   stateRegistration     String?
   municipalRegistration String?
   email                 String?
   phone                 String?
   whatsapp              String?
-  status                CompanyStatus    @default(ACTIVE)
-  timezone              String           @default("America/Sao_Paulo")
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  status                CompanyStatus       @default(ACTIVE)
+  timezone              String              @default("America/Sao_Paulo")
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
   deletedAt             DateTime?
   addresses             CompanyAddress[]
   branding              CompanyBranding?
@@ -104,6 +119,7 @@ model Company {
   serviceOrders         ServiceOrder[]
   productionOrders      ProductionOrder[]
   scheduleEvents        ScheduleEvent[]
+  inventoryMovements    InventoryMovement[]
 }
 
 model CompanyAddress {
@@ -248,52 +264,19 @@ model User {
 }
 
 model CompanyMember {
-  id        String       @id @default(uuid()) @db.Char(36)
-  companyId String       @db.Char(36)
-  userId    String       @db.Char(36)
-  status    UserStatus   @default(INVITED)
-  isOwner   Boolean      @default(false)
+  id        String              @id @default(uuid()) @db.Char(36)
+  companyId String              @db.Char(36)
+  userId    String              @db.Char(36)
+  role      CompanyUserRole     @default(MANAGER)
+  status    CompanyMemberStatus @default(CONVIDADO)
+  isOwner   Boolean             @default(false)
   joinedAt  DateTime?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  company   Company      @relation(fields: [companyId], references: [id])
-  user      User         @relation(fields: [userId], references: [id])
-  roles     MemberRole[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  company   Company             @relation(fields: [companyId], references: [id])
+  user      User                @relation(fields: [userId], references: [id])
 
   @@unique([companyId, userId])
-}
-
-model Role {
-  id          String           @id @default(uuid()) @db.Char(36)
-  code        String           @unique
-  name        String
-  permissions RolePermission[]
-  members     MemberRole[]
-}
-
-model Permission {
-  id          String           @id @default(uuid()) @db.Char(36)
-  code        String           @unique
-  description String?
-  roles       RolePermission[]
-}
-
-model MemberRole {
-  memberId String        @db.Char(36)
-  roleId   String        @db.Char(36)
-  member   CompanyMember @relation(fields: [memberId], references: [id])
-  role     Role          @relation(fields: [roleId], references: [id])
-
-  @@id([memberId, roleId])
-}
-
-model RolePermission {
-  roleId       String     @db.Char(36)
-  permissionId String     @db.Char(36)
-  role         Role       @relation(fields: [roleId], references: [id])
-  permission   Permission @relation(fields: [permissionId], references: [id])
-
-  @@id([roleId, permissionId])
 }
 
 model UserSession {
@@ -357,30 +340,30 @@ enum CatalogItemStatus {
 }
 
 model Client {
-  id          String     @id @default(uuid()) @db.Char(36)
-  companyId   String     @db.Char(36)
-  type        ClientType @default(FISICA)
-  name        String
-  document    String?
-  email       String?
-  phone       String?
-  whatsapp    String?
-  postalCode  String?
-  street      String?
-  number      String?
-  complement  String?
-  district    String?
-  city        String?
-  state       String?
-  observations String?   @db.Text
-  status      String     @default("ACTIVE")
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  deletedAt   DateTime?
-  company     Company    @relation(fields: [companyId], references: [id])
-  works       Work[]
-  quotes      Quote[]
-  payments    Payment[]
+  id               String            @id @default(uuid()) @db.Char(36)
+  companyId        String            @db.Char(36)
+  type             ClientType        @default(FISICA)
+  name             String
+  document         String?
+  email            String?
+  phone            String?
+  whatsapp         String?
+  postalCode       String?
+  street           String?
+  number           String?
+  complement       String?
+  district         String?
+  city             String?
+  state            String?
+  observations     String?           @db.Text
+  status           String            @default("ACTIVE")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+  company          Company           @relation(fields: [companyId], references: [id])
+  works            Work[]
+  quotes           Quote[]
+  payments         Payment[]
   productionOrders ProductionOrder[]
   serviceOrders    ServiceOrder[]
   scheduleEvents   ScheduleEvent[]
@@ -390,28 +373,28 @@ model Client {
 }
 
 model Work {
-  id          String     @id @default(uuid()) @db.Char(36)
-  companyId   String     @db.Char(36)
-  clientId    String     @db.Char(36)
-  name        String
-  reference   String?
-  postalCode  String?
-  street      String?
-  number      String?
-  complement  String?
-  district    String?
-  city        String?
-  state       String?
-  status      WorkStatus @default(PLANEJADA)
-  observations String?   @db.Text
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  deletedAt   DateTime?
-  company     Company    @relation(fields: [companyId], references: [id])
-  client      Client     @relation(fields: [clientId], references: [id])
-  measurements Measurement[]
-  quotes        Quote[]
-  serviceOrders ServiceOrder[]
+  id               String            @id @default(uuid()) @db.Char(36)
+  companyId        String            @db.Char(36)
+  clientId         String            @db.Char(36)
+  name             String
+  reference        String?
+  postalCode       String?
+  street           String?
+  number           String?
+  complement       String?
+  district         String?
+  city             String?
+  state            String?
+  status           WorkStatus        @default(PLANEJADA)
+  observations     String?           @db.Text
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+  company          Company           @relation(fields: [companyId], references: [id])
+  client           Client            @relation(fields: [clientId], references: [id])
+  measurements     Measurement[]
+  quotes           Quote[]
+  serviceOrders    ServiceOrder[]
   productionOrders ProductionOrder[]
 
   @@index([companyId])
@@ -453,20 +436,21 @@ model Service {
 }
 
 model Material {
-  id          String            @id @default(uuid()) @db.Char(36)
-  companyId   String            @db.Char(36)
+  id          String              @id @default(uuid()) @db.Char(36)
+  companyId   String              @db.Char(36)
   name        String
   description String?
-  unit        String            @default("un")
-  price       Decimal?          @db.Decimal(15, 2)
-  cost        Decimal?          @db.Decimal(15, 2)
-  stockQty    Decimal?          @db.Decimal(15, 3) @default(0)
-  minStockQty Decimal?          @db.Decimal(15, 3) @default(0)
-  status      CatalogItemStatus @default(ACTIVE)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  unit        String              @default("un")
+  price       Decimal?            @db.Decimal(15, 2)
+  cost        Decimal?            @db.Decimal(15, 2)
+  stockQty    Decimal?            @default(0) @db.Decimal(15, 3)
+  minStockQty Decimal?            @default(0) @db.Decimal(15, 3)
+  status      CatalogItemStatus   @default(ACTIVE)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
   deletedAt   DateTime?
-  company     Company           @relation(fields: [companyId], references: [id])
+  company     Company             @relation(fields: [companyId], references: [id])
+  movements   InventoryMovement[]
 
   @@index([companyId])
 }
@@ -483,28 +467,28 @@ enum MeasurementApplicationType {
 }
 
 model Measurement {
-  id               String                      @id @default(uuid()) @db.Char(36)
-  companyId        String                      @db.Char(36)
-  workId           String                      @db.Char(36)
-  environmentName  String
-  applicationType  MeasurementApplicationType  @default(DRYWALL)
-  length           Decimal?                    @db.Decimal(15, 2)
-  width            Decimal?                    @db.Decimal(15, 2)
-  ceilingHeight    Decimal?                    @db.Decimal(15, 2)
-  area             Decimal?                    @db.Decimal(15, 2)
-  perimeter        Decimal?                    @db.Decimal(15, 2)
-  doors            Int                         @default(0)
-  windows          Int                         @default(0)
-  cutouts          Int                         @default(0)
-  fixtures         Int                         @default(0)
-  hasCove          Boolean                     @default(false)
-  hasDropCeiling   Boolean                     @default(false)
-  observations     String?                     @db.Text
-  createdAt        DateTime                    @default(now())
-  updatedAt        DateTime                    @updatedAt
-  deletedAt        DateTime?
-  company          Company                     @relation(fields: [companyId], references: [id])
-  work             Work                        @relation(fields: [workId], references: [id])
+  id              String                     @id @default(uuid()) @db.Char(36)
+  companyId       String                     @db.Char(36)
+  workId          String                     @db.Char(36)
+  environmentName String
+  applicationType MeasurementApplicationType @default(DRYWALL)
+  length          Decimal?                   @db.Decimal(15, 2)
+  width           Decimal?                   @db.Decimal(15, 2)
+  ceilingHeight   Decimal?                   @db.Decimal(15, 2)
+  area            Decimal?                   @db.Decimal(15, 2)
+  perimeter       Decimal?                   @db.Decimal(15, 2)
+  doors           Int                        @default(0)
+  windows         Int                        @default(0)
+  cutouts         Int                        @default(0)
+  fixtures        Int                        @default(0)
+  hasCove         Boolean                    @default(false)
+  hasDropCeiling  Boolean                    @default(false)
+  observations    String?                    @db.Text
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  deletedAt       DateTime?
+  company         Company                    @relation(fields: [companyId], references: [id])
+  work            Work                       @relation(fields: [workId], references: [id])
 
   @@index([companyId])
   @@index([workId])
@@ -516,21 +500,21 @@ enum CompositionStatus {
 }
 
 model Composition {
-  id              String            @id @default(uuid()) @db.Char(36)
-  companyId       String            @db.Char(36)
+  id              String                     @id @default(uuid()) @db.Char(36)
+  companyId       String                     @db.Char(36)
   code            String
   name            String
-  version         Int               @default(1)
+  version         Int                        @default(1)
   applicationType MeasurementApplicationType
-  status          CompositionStatus @default(ACTIVE)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  status          CompositionStatus          @default(ACTIVE)
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
   deletedAt       DateTime?
-  company         Company           @relation(fields: [companyId], references: [id])
+  company         Company                    @relation(fields: [companyId], references: [id])
   items           CompositionItem[]
 
-  @@index([companyId])
   @@unique([companyId, code, version])
+  @@index([companyId])
 }
 
 model CompositionItem {
@@ -611,10 +595,10 @@ model Quote {
   history         QuoteHistory[]
   scheduleEvents  ScheduleEvent[]
 
+  @@unique([companyId, quoteNumber, version])
   @@index([companyId])
   @@index([clientId])
   @@index([workId])
-  @@unique([companyId, quoteNumber, version])
 }
 
 model QuoteHistory {
@@ -629,17 +613,17 @@ model QuoteHistory {
 }
 
 model QuoteItem {
-  id          String       @id @default(uuid()) @db.Char(36)
-  quoteId     String       @db.Char(36)
+  id          String        @id @default(uuid()) @db.Char(36)
+  quoteId     String        @db.Char(36)
   itemType    QuoteItemType
   name        String
   description String?
-  quantity    Decimal      @default(1) @db.Decimal(15, 3)
-  unit        String       @default("un")
-  unitPrice   Decimal      @default(0) @db.Decimal(15, 2)
-  total       Decimal      @default(0) @db.Decimal(15, 2)
-  createdAt   DateTime     @default(now())
-  quote       Quote        @relation(fields: [quoteId], references: [id])
+  quantity    Decimal       @default(1) @db.Decimal(15, 3)
+  unit        String        @default("un")
+  unitPrice   Decimal       @default(0) @db.Decimal(15, 2)
+  total       Decimal       @default(0) @db.Decimal(15, 2)
+  createdAt   DateTime      @default(now())
+  quote       Quote         @relation(fields: [quoteId], references: [id])
 
   @@index([quoteId])
 }
@@ -654,41 +638,41 @@ enum ProductionOrderStatus {
 }
 
 model ProductionOrder {
-  id               String                @id @default(uuid()) @db.Char(36)
-  companyId        String                @db.Char(36)
-  clientId         String?               @db.Char(36)
-  workId           String?               @db.Char(36)
-  code             Int
-  status           ProductionOrderStatus @default(PENDENTE)
-  dueDate          DateTime?
-  completedDate    DateTime?
+  id                String                @id @default(uuid()) @db.Char(36)
+  companyId         String                @db.Char(36)
+  clientId          String?               @db.Char(36)
+  workId            String?               @db.Char(36)
+  code              Int
+  status            ProductionOrderStatus @default(PENDENTE)
+  dueDate           DateTime?
+  completedDate     DateTime?
   responsiblePerson String?
-  observations     String?               @db.Text
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-  deletedAt        DateTime?
-  company          Company               @relation(fields: [companyId], references: [id])
-  client           Client?               @relation(fields: [clientId], references: [id])
-  work             Work?                 @relation(fields: [workId], references: [id])
-  items            ProductionOrderItem[]
+  observations      String?               @db.Text
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  deletedAt         DateTime?
+  company           Company               @relation(fields: [companyId], references: [id])
+  client            Client?               @relation(fields: [clientId], references: [id])
+  work              Work?                 @relation(fields: [workId], references: [id])
+  items             ProductionOrderItem[]
 
+  @@unique([companyId, code])
   @@index([companyId])
   @@index([clientId])
   @@index([workId])
-  @@unique([companyId, code])
 }
 
 model ProductionOrderItem {
-  id                 String   @id @default(uuid()) @db.Char(36)
-  productionOrderId  String   @db.Char(36)
-  productName        String
-  quantity           Decimal  @db.Decimal(15, 3)
-  unit               String   @default("un")
-  producedQty        Decimal  @default(0) @db.Decimal(15, 3)
-  wastedQty          Decimal  @default(0) @db.Decimal(15, 3)
-  status             String   @default("PENDENTE")
-  createdAt          DateTime @default(now())
-  productionOrder    ProductionOrder @relation(fields: [productionOrderId], references: [id])
+  id                String          @id @default(uuid()) @db.Char(36)
+  productionOrderId String          @db.Char(36)
+  productName       String
+  quantity          Decimal         @db.Decimal(15, 3)
+  unit              String          @default("un")
+  producedQty       Decimal         @default(0) @db.Decimal(15, 3)
+  wastedQty         Decimal         @default(0) @db.Decimal(15, 3)
+  status            String          @default("PENDENTE")
+  createdAt         DateTime        @default(now())
+  productionOrder   ProductionOrder @relation(fields: [productionOrderId], references: [id])
 
   @@index([productionOrderId])
 }
@@ -704,45 +688,79 @@ enum ServiceOrderStatus {
   CANCELADA
 }
 
-model ServiceOrder {
-  id              String              @id @default(uuid()) @db.Char(36)
-  companyId       String              @db.Char(36)
-  clientId        String              @db.Char(36)
-  workId          String?             @db.Char(36)
-  code            Int
-  status          ServiceOrderStatus  @default(PENDENTE)
-  scheduledDate   DateTime?
-  completedDate   DateTime?
-  cost            Decimal?            @db.Decimal(15, 2)
-  saleValue       Decimal?            @db.Decimal(15, 2)
-  profit          Decimal?            @db.Decimal(15, 2)
-  observations    String?             @db.Text
-  checklist       Json?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  deletedAt       DateTime?
-  company         Company             @relation(fields: [companyId], references: [id])
-  client          Client              @relation(fields: [clientId], references: [id])
-  work            Work?               @relation(fields: [workId], references: [id])
-  materials       ServiceOrderMaterial[]
-  scheduleEvents  ScheduleEvent[]
+// ─── Fase 7 — Estoque (movimentos de inventário) ───────────────────────
 
+enum InventoryMovementType {
+  ENTRADA
+  SAIDA
+  RESERVA
+  CONSUMO
+  PERDA
+  AJUSTE
+  RETORNO
+}
+
+model ServiceOrder {
+  id                 String                 @id @default(uuid()) @db.Char(36)
+  companyId          String                 @db.Char(36)
+  clientId           String                 @db.Char(36)
+  workId             String?                @db.Char(36)
+  code               Int
+  status             ServiceOrderStatus     @default(PENDENTE)
+  scheduledDate      DateTime?
+  completedDate      DateTime?
+  cost               Decimal?               @db.Decimal(15, 2)
+  saleValue          Decimal?               @db.Decimal(15, 2)
+  profit             Decimal?               @db.Decimal(15, 2)
+  observations       String?                @db.Text
+  checklist          Json?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  deletedAt          DateTime?
+  company            Company                @relation(fields: [companyId], references: [id])
+  client             Client                 @relation(fields: [clientId], references: [id])
+  work               Work?                  @relation(fields: [workId], references: [id])
+  materials          ServiceOrderMaterial[]
+  scheduleEvents     ScheduleEvent[]
+  inventoryMovements InventoryMovement[]
+
+  @@unique([companyId, code])
   @@index([companyId])
   @@index([clientId])
   @@index([workId])
-  @@unique([companyId, code])
 }
 
 model ServiceOrderMaterial {
-  id              String      @id @default(uuid()) @db.Char(36)
-  serviceOrderId  String      @db.Char(36)
-  materialName    String
-  quantity        Decimal     @db.Decimal(15, 3)
-  unit            String      @default("un")
-  usedAt          DateTime?
-  createdAt       DateTime    @default(now())
-  serviceOrder    ServiceOrder @relation(fields: [serviceOrderId], references: [id])
+  id             String       @id @default(uuid()) @db.Char(36)
+  serviceOrderId String       @db.Char(36)
+  materialName   String
+  quantity       Decimal      @db.Decimal(15, 3)
+  unit           String       @default("un")
+  usedAt         DateTime?
+  createdAt      DateTime     @default(now())
+  serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id])
 
+  @@index([serviceOrderId])
+}
+
+model InventoryMovement {
+  id             String                @id @default(uuid()) @db.Char(36)
+  companyId      String                @db.Char(36)
+  materialId     String                @db.Char(36)
+  serviceOrderId String?               @db.Char(36)
+  type           InventoryMovementType
+  quantity       Decimal               @db.Decimal(15, 3)
+  unitCost       Decimal?              @db.Decimal(15, 2)
+  notes          String?               @db.Text
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  deletedAt      DateTime?
+  company        Company               @relation(fields: [companyId], references: [id])
+  material       Material              @relation(fields: [materialId], references: [id])
+  serviceOrder   ServiceOrder?         @relation(fields: [serviceOrderId], references: [id])
+
+  @@index([companyId])
+  @@index([materialId])
   @@index([serviceOrderId])
 }
 
@@ -766,41 +784,41 @@ enum PaymentMethod {
 }
 
 model Payment {
-  id            String        @id @default(uuid()) @db.Char(36)
-  companyId     String        @db.Char(36)
-  clientId      String        @db.Char(36)
-  quoteId       String?       @db.Char(36)
-  amount        Decimal       @db.Decimal(15, 2)
-  paymentMethod PaymentMethod
-  paymentDate   DateTime      @default(now())
-  dueDate       DateTime?
-  status        PaymentStatus @default(PENDENTE)
-  notes         String?       @db.Text
-  receiptUrl    String?
-  installmentCount Int        @default(1)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  deletedAt     DateTime?
-  company       Company       @relation(fields: [companyId], references: [id])
-  client        Client        @relation(fields: [clientId], references: [id])
-  installments  PaymentInstallment[]
+  id               String               @id @default(uuid()) @db.Char(36)
+  companyId        String               @db.Char(36)
+  clientId         String               @db.Char(36)
+  quoteId          String?              @db.Char(36)
+  amount           Decimal              @db.Decimal(15, 2)
+  paymentMethod    PaymentMethod
+  paymentDate      DateTime             @default(now())
+  dueDate          DateTime?
+  status           PaymentStatus        @default(PENDENTE)
+  notes            String?              @db.Text
+  receiptUrl       String?
+  installmentCount Int                  @default(1)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  deletedAt        DateTime?
+  company          Company              @relation(fields: [companyId], references: [id])
+  client           Client               @relation(fields: [clientId], references: [id])
+  installments     PaymentInstallment[]
 
   @@index([companyId])
   @@index([clientId])
 }
 
 model PaymentInstallment {
-  id            String        @id @default(uuid()) @db.Char(36)
-  paymentId     String        @db.Char(36)
-  companyId     String        @db.Char(36)
+  id                String        @id @default(uuid()) @db.Char(36)
+  paymentId         String        @db.Char(36)
+  companyId         String        @db.Char(36)
   installmentNumber Int
-  amount        Decimal       @db.Decimal(15, 2)
-  dueDate       DateTime
-  paidDate      DateTime?
-  status        PaymentStatus @default(PENDENTE)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  payment       Payment       @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  amount            Decimal       @db.Decimal(15, 2)
+  dueDate           DateTime
+  paidDate          DateTime?
+  status            PaymentStatus @default(PENDENTE)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  payment           Payment       @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   @@index([paymentId])
   @@index([companyId])

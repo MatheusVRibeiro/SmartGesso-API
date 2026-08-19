@@ -29,6 +29,8 @@ import { PaymentsModule } from './modules/payments/payments.module';
 // Alias para não colidir com o ScheduleModule do @nestjs/schedule (cron)
 import { ScheduleModule as ScheduleEventsModule } from './modules/schedule/schedule.module';
 import { CompanyDashboardModule } from './modules/company-dashboard/company-dashboard.module';
+import { CompanyMembersModule } from './modules/company-members/company-members.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 
 @Module({
   imports: [
@@ -41,23 +43,25 @@ import { CompanyDashboardModule } from './modules/company-dashboard/company-dash
     DashboardModule,
     HealthModule,
     CompanyDashboardModule,
-    ExpensesModule,
-    PlatformAuthModule,
-    PlatformCompaniesModule,
-    PlansModule,
-    SubscriptionsModule,
-    AuthModule,
-    ClientsModule,
-    CompaniesModule,
-    CatalogModule,
-    WorksModule,
-    MeasurementsModule,
-    CompositionsModule,
-    QuotesModule,
-    ProductionOrdersModule,
+        CompanyMembersModule,
+        ExpensesModule,
+        PlatformAuthModule,
+        PlatformCompaniesModule,
+        PlansModule,
+        SubscriptionsModule,
+        AuthModule,
+        ClientsModule,
+        CompaniesModule,
+        CatalogModule,
+        WorksModule,
+        MeasurementsModule,
+        CompositionsModule,
+        QuotesModule,
+        ProductionOrdersModule,
         ServiceOrdersModule,
         PaymentsModule,
         ScheduleEventsModule,
+        InventoryModule,
       ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })

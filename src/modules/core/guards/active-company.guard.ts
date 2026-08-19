@@ -5,6 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { permissionsForRole } from '../company-permissions';
 
 @Injectable()
 export class ActiveCompanyGuard implements CanActivate {
@@ -23,22 +24,7 @@ export class ActiveCompanyGuard implements CanActivate {
         where: {
           userId,
           companyId,
-          status: 'ACTIVE',
-        },
-        include: {
-          roles: {
-            include: {
-              role: {
-                include: {
-                  permissions: {
-                    include: {
-                      permission: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
+          status: 'ATIVO',
         },
       }),
       this.prisma.company.findFirst({
@@ -52,18 +38,13 @@ export class ActiveCompanyGuard implements CanActivate {
     if (!member || !company)
       throw new ForbiddenException('Empresa ativa não selecionada ou sem vínculo');
 
-    // Carregar permissões do member via MemberRole -> Role -> RolePermission -> Permission
-    const permissions = new Set<string>();
-    for (const mr of member.roles) {
-      for (const rp of mr.role.permissions) {
-        permissions.add(rp.permission.code);
-      }
-    }
+    // Permissões derivadas do perfil (role) do membro — V3 seção 57
+    const permissions = permissionsForRole(member.role);
 
     req.company = company;
     req.member = {
       ...member,
-      permissions: [...permissions],
+      permissions,
     };
     return true;
   }

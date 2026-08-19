@@ -345,7 +345,7 @@ export class AuthService {
 
     // Buscar o activeCompanyId — pegar a primeira empresa ativa do usuário
     const activeMember = await this.prisma.companyMember.findFirst({
-      where: { userId: user.id, status: 'ACTIVE' },
+      where: { userId: user.id, status: 'ATIVO' },
       orderBy: { isOwner: 'desc' },
     });
 
@@ -468,15 +468,16 @@ export class AuthService {
           data: {
             companyId: matchedInv!.companyId,
             userId,
-            status: 'ACTIVE',
+            role: 'COMPANY_OWNER',
+            status: 'ATIVO',
             isOwner: true,
             joinedAt: new Date(),
           },
         });
-      } else if (existingMember.status !== 'ACTIVE') {
+      } else if (existingMember.status !== 'ATIVO') {
         await tx.companyMember.update({
           where: { id: existingMember.id },
-          data: { status: 'ACTIVE', joinedAt: new Date() },
+          data: { role: 'COMPANY_OWNER', status: 'ATIVO', joinedAt: new Date() },
         });
       }
 
@@ -524,7 +525,7 @@ export class AuthService {
     companyId: string,
   ): Promise<TokenPair & { activeCompanyId: string }> {
     const member = await this.prisma.companyMember.findFirst({
-      where: { userId, companyId, status: 'ACTIVE' },
+      where: { userId, companyId, status: 'ATIVO' },
     });
 
     if (!member) {
