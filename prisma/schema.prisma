@@ -103,6 +103,7 @@ model Company {
   expenses              Expense[]
   serviceOrders         ServiceOrder[]
   productionOrders      ProductionOrder[]
+  scheduleEvents        ScheduleEvent[]
 }
 
 model CompanyAddress {
@@ -382,6 +383,7 @@ model Client {
   payments    Payment[]
   productionOrders ProductionOrder[]
   serviceOrders    ServiceOrder[]
+  scheduleEvents   ScheduleEvent[]
 
   @@index([companyId])
   @@index([name])
@@ -607,6 +609,7 @@ model Quote {
   work            Work?              @relation(fields: [workId], references: [id])
   items           QuoteItem[]
   history         QuoteHistory[]
+  scheduleEvents  ScheduleEvent[]
 
   @@index([companyId])
   @@index([clientId])
@@ -722,6 +725,7 @@ model ServiceOrder {
   client          Client              @relation(fields: [clientId], references: [id])
   work            Work?               @relation(fields: [workId], references: [id])
   materials       ServiceOrderMaterial[]
+  scheduleEvents  ScheduleEvent[]
 
   @@index([companyId])
   @@index([clientId])
@@ -831,4 +835,52 @@ model Expense {
   company      Company         @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
+}
+
+// ─── Fase 7 — Agenda ────────────────────────────────────────────────────────
+
+enum ScheduleEventType {
+  VISITA
+  MEDICAO
+  INICIO
+  INSTALACAO
+  PRODUCAO
+  RETORNO
+  ACABAMENTO
+  ENTREGA
+  COBRANCA
+  OUTRO
+}
+
+enum ScheduleEventStatus {
+  AGENDADO
+  CONCLUIDO
+  CANCELADO
+}
+
+model ScheduleEvent {
+  id             String              @id @default(uuid()) @db.Char(36)
+  companyId      String              @db.Char(36)
+  type           ScheduleEventType
+  title          String?
+  clientId       String?             @db.Char(36)
+  serviceOrderId String?             @db.Char(36)
+  quoteId        String?             @db.Char(36)
+  date           DateTime
+  time           String?
+  notes          String?             @db.Text
+  status         ScheduleEventStatus @default(AGENDADO)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  deletedAt      DateTime?
+  company        Company             @relation(fields: [companyId], references: [id])
+  client         Client?             @relation(fields: [clientId], references: [id])
+  serviceOrder   ServiceOrder?       @relation(fields: [serviceOrderId], references: [id])
+  quote          Quote?              @relation(fields: [quoteId], references: [id])
+
+  @@index([companyId])
+  @@index([clientId])
+  @@index([serviceOrderId])
+  @@index([quoteId])
+  @@index([date])
 }

@@ -26,6 +26,8 @@ import { QuotesModule } from './modules/quotes/quotes.module';
 import { ProductionOrdersModule } from './modules/production-orders/production-orders.module';
 import { ServiceOrdersModule } from './modules/service-orders/service-orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+// Alias para não colidir com o ScheduleModule do @nestjs/schedule (cron)
+import { ScheduleModule as ScheduleEventsModule } from './modules/schedule/schedule.module';
 import { CompanyDashboardModule } from './modules/company-dashboard/company-dashboard.module';
 
 @Module({
@@ -53,9 +55,10 @@ import { CompanyDashboardModule } from './modules/company-dashboard/company-dash
     CompositionsModule,
     QuotesModule,
     ProductionOrdersModule,
-    ServiceOrdersModule,
-    PaymentsModule,
-  ],
+        ServiceOrdersModule,
+        PaymentsModule,
+        ScheduleEventsModule,
+      ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })
 export class AppModule implements NestModule {
