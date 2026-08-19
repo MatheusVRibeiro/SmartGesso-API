@@ -3,6 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 const PDFDocument = require('pdfkit');
 import { PassThrough } from 'stream';
 import { PrismaService } from '../../database/prisma.service';
+import { isSafeLogoUrl } from './safe-logo-url';
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -180,12 +181,16 @@ export class QuotesPdfService {
         const b64 = logoUrl.split(',')[1] || '';
         buffer = Buffer.from(b64, 'base64');
       } else {
+        if (!(await isSafeLogoUrl(logoUrl))) return null;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 5000);
-        const resp = await fetch(logoUrl, { signal: controller.signal });
-        clearTimeout(timer);
-        if (!resp.ok) return null;
-        buffer = Buffer.from(await resp.arrayBuffer());
+        try {
+          const resp = await fetch(logoUrl, { signal: controller.signal });
+          if (!resp.ok) return null;
+          buffer = Buffer.from(await resp.arrayBuffer());
+        } finally {
+          clearTimeout(timer);
+        }
       }
       const img = doc.openImage(buffer);
       return { buffer, width: img.width, height: img.height };
