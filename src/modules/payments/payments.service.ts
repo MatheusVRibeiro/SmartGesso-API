@@ -1,12 +1,25 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { CreatePaymentDto } from './dto/create-payment.dto';
+import { CreatePaymentDto, CreatePaymentInstallmentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 
 const PAYMENT_INCLUDE = {
   client: { select: { id: true, name: true } },
+  installments: {
+    select: {
+      id: true,
+      installmentNumber: true,
+      amount: true,
+      dueDate: true,
+      paidDate: true,
+      status: true,
+    },
+    orderBy: { installmentNumber: 'asc' as const },
+  },
 } as const;
+
+const MAX_INSTALLMENTS = 12;
 
 @Injectable()
 export class PaymentsService {
@@ -19,19 +32,35 @@ export class PaymentsService {
         await this.ensureQuoteBelongsToCompany(companyId, dto.quoteId);
       }
 
+      const installmentCount = dto.installments?.length ?? dto.installmentCount ?? 1;
+      if (installmentCount > MAX_INSTALLMENTS) {
+        throw new BadRequestException(`Máximo de ${MAX_INSTALLMENTS} parcelas por recebimento`);
+      }
+      if (dto.installments && dto.installmentCount && dto.installments.length !== dto.installmentCount) {
+        throw new BadRequestException('A quantidade de parcelas informada não confere com installmentCount');
+      }
+
+      const paymentData: Prisma.PaymentCreateInput = {
+        company: { connect: { id: companyId } },
+        client: { connect: { id: dto.clientId } },
+        ...(dto.quoteId ? { quote: { connect: { id: dto.quoteId } } } : {}),
+        amount: dto.amount,
+        paymentMethod: dto.paymentMethod,
+        paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        status: installmentCount > 1 ? 'PENDENTE' : dto.status,
+        notes: dto.notes,
+        receiptUrl: dto.receiptUrl,
+        installmentCount,
+      };
+
+      if (installmentCount > 1) {
+        const installments = this.buildInstallments(companyId, dto, installmentCount);
+        paymentData.installments = { create: installments };
+      }
+
       const payment = await this.prisma.payment.create({
-        data: {
-          companyId,
-          clientId: dto.clientId,
-          quoteId: dto.quoteId,
-          amount: dto.amount,
-          paymentMethod: dto.paymentMethod,
-          paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined,
-          dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-          status: dto.status,
-          notes: dto.notes,
-          receiptUrl: dto.receiptUrl,
-        },
+        data: paymentData,
         include: PAYMENT_INCLUDE,
       });
 
@@ -104,6 +133,87 @@ export class PaymentsService {
     });
   }
 
+  /** Marca uma parcela como CONFIRMADO (paidDate = now). Se TODAS as parcelas
+   *  estiverem pagas, o recebimento pai também vira CONFIRMADO. */
+  async payInstallment(companyId: string, paymentId: string, installmentId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!payment) throw new NotFoundException('Recebimento não encontrado');
+
+    const installment = await this.prisma.paymentInstallment.findFirst({
+      where: { id: installmentId, paymentId, companyId },
+      select: { id: true, status: true },
+    });
+    if (!installment) throw new NotFoundException('Parcela não encontrada');
+
+    if (installment.status !== 'CONFIRMADO') {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.paymentInstallment.update({
+          where: { id: installmentId },
+          data: { status: 'CONFIRMADO', paidDate: new Date() },
+        });
+
+        const all = await tx.paymentInstallment.findMany({
+          where: { paymentId },
+          select: { status: true },
+        });
+        const allPaid = all.length > 0 && all.every((i) => i.status === 'CONFIRMADO');
+        if (allPaid) {
+          await tx.payment.update({
+            where: { id: paymentId },
+            data: { status: 'CONFIRMADO' },
+          });
+        }
+      });
+    }
+
+    return this.findOne(companyId, paymentId);
+  }
+
+  private buildInstallments(
+    companyId: string,
+    dto: CreatePaymentDto,
+    count: number,
+  ): Prisma.PaymentInstallmentCreateWithoutPaymentInput[] {
+    const baseDate = dto.dueDate
+      ? new Date(dto.dueDate)
+      : dto.paymentDate
+        ? new Date(dto.paymentDate)
+        : new Date();
+
+    return Array.from({ length: count }, (_, index) => {
+      const provided = dto.installments?.[index];
+      return {
+        companyId,
+        installmentNumber: index + 1,
+        amount: provided ? provided.amount : this.splitAmount(dto.amount, count, index),
+        dueDate: provided ? new Date(provided.dueDate) : this.addMonths(baseDate, index),
+      };
+    });
+  }
+
+  /** Divide o total em parcelas iguais (2 casas); a última absorve o resto do arredondamento. */
+  private splitAmount(total: number, count: number, index: number): number {
+    const base = Math.round((total * 100) / count) / 100;
+    if (index === count - 1) {
+      return Math.round((total - base * (count - 1)) * 100) / 100;
+    }
+    return base;
+  }
+
+  /** Soma meses sem estourar o dia (ex.: 31/01 + 1 mês → 28/02). */
+  private addMonths(date: Date, months: number): Date {
+    const d = new Date(date);
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + months);
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(day, lastDay));
+    return d;
+  }
+
   private async ensureClientBelongsToCompany(companyId: string, clientId: string) {
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, companyId, deletedAt: null },
@@ -128,6 +238,9 @@ export class PaymentsService {
     return {
       ...payment,
       amount: Number(payment.amount),
+      installments: payment.installments
+        ? payment.installments.map((i: any) => ({ ...i, amount: Number(i.amount) }))
+        : undefined,
     };
   }
 }

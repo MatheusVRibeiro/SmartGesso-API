@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, IsArray, ValidateNested, IsNumber, IsDateString, IsObject } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsArray, ValidateNested, IsNumber, IsDateString, IsObject, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ServiceOrderStatus } from '@prisma/client';
 
@@ -40,6 +40,16 @@ export class UpdateServiceOrderDto {
   @IsOptional()
   @IsDateString()
   completedDate?: string;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  cost?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  saleValue?: number;
 
   @IsOptional()
   @IsString()

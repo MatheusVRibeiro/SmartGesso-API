@@ -16,6 +16,7 @@ import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { ServiceOrdersService } from './service-orders.service';
 import { CreateServiceOrderDto } from './dto/create-service-order.dto';
 import { UpdateServiceOrderDto } from './dto/update-service-order.dto';
+import { RegisterServiceOrderResultDto } from './dto/register-service-order-result.dto';
 
 @ApiTags('service-orders')
 @ApiBearerAuth()
@@ -36,6 +37,20 @@ export class ServiceOrdersController {
   @Get(':id')
   findOne(@Req() r: any, @Param('id') id: string) {
     return this.serviceOrdersService.findOne(r.company.id, id);
+  }
+
+  @Get(':id/result')
+  getResult(@Req() r: any, @Param('id') id: string) {
+    return this.serviceOrdersService.getResult(r.company.id, id);
+  }
+
+  @Patch(':id/result')
+  registerResult(
+    @Req() r: any,
+    @Param('id') id: string,
+    @Body() dto: RegisterServiceOrderResultDto,
+  ) {
+    return this.serviceOrdersService.registerResult(r.company.id, id, dto);
   }
 
   @Post()

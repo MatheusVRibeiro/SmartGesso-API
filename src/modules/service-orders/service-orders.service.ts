@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateServiceOrderDto } from './dto/create-service-order.dto';
 import { UpdateServiceOrderDto } from './dto/update-service-order.dto';
+import { RegisterServiceOrderResultDto } from './dto/register-service-order-result.dto';
 
 const SERVICE_ORDER_INCLUDE = {
   client: { select: { id: true, name: true } },
@@ -23,29 +24,36 @@ export class ServiceOrdersService {
 
       const code = await this.generateCode(companyId);
 
-      return await this.prisma.serviceOrder.create({
-        data: {
-          companyId,
-          clientId: dto.clientId,
-          workId: dto.workId,
-          code,
-          status: dto.status,
-          scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
-          completedDate: dto.completedDate ? new Date(dto.completedDate) : undefined,
-          observations: dto.observations,
-          checklist: dto.checklist,
-          materials: dto.materials
-            ? {
-                create: dto.materials.map((m) => ({
-                  materialName: m.materialName,
-                  quantity: m.quantity,
-                  unit: m.unit,
-                })),
-              }
-            : undefined,
-        },
-        include: SERVICE_ORDER_INCLUDE,
-      });
+      const profit = this.calculateProfit(dto.cost, dto.saleValue);
+
+      return this.convertDecimals(
+        await this.prisma.serviceOrder.create({
+          data: {
+            companyId,
+            clientId: dto.clientId,
+            workId: dto.workId,
+            code,
+            status: dto.status,
+            scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
+            completedDate: dto.completedDate ? new Date(dto.completedDate) : undefined,
+            cost: dto.cost,
+            saleValue: dto.saleValue,
+            profit,
+            observations: dto.observations,
+            checklist: dto.checklist,
+            materials: dto.materials
+              ? {
+                  create: dto.materials.map((m) => ({
+                    materialName: m.materialName,
+                    quantity: m.quantity,
+                    unit: m.unit,
+                  })),
+                }
+              : undefined,
+          },
+          include: SERVICE_ORDER_INCLUDE,
+        }),
+      );
     } catch (error) {
       console.error('SERVICE_ORDER CREATE ERROR:', error);
       throw error;
@@ -87,7 +95,7 @@ export class ServiceOrdersService {
   }
 
   async update(companyId: string, id: string, dto: UpdateServiceOrderDto) {
-    await this.findOne(companyId, id);
+    const existing = await this.findOne(companyId, id);
 
     if (dto.clientId) {
       await this.ensureClientBelongsToCompany(companyId, dto.clientId);
@@ -96,6 +104,13 @@ export class ServiceOrdersService {
       await this.ensureWorkBelongsToCompany(companyId, dto.workId);
     }
 
+    // Resultado financeiro: recalcula profit sempre que cost/saleValue forem informados,
+    // usando o valor já gravado para o campo não enviado (evita profit inconsistente).
+    const cost = dto.cost !== undefined ? dto.cost : existing.cost ?? undefined;
+    const saleValue =
+      dto.saleValue !== undefined ? dto.saleValue : existing.saleValue ?? undefined;
+    const profit = this.calculateProfit(cost, saleValue);
+
     // Se há materiais para atualizar, deletar os existentes e criar novos
     if (dto.materials) {
       await this.prisma.serviceOrderMaterial.deleteMany({
@@ -103,28 +118,33 @@ export class ServiceOrdersService {
       });
     }
 
-    return this.prisma.serviceOrder.update({
-      where: { id },
-      data: {
-        clientId: dto.clientId,
-        workId: dto.workId,
-        status: dto.status,
-        scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
-        completedDate: dto.completedDate ? new Date(dto.completedDate) : undefined,
-        observations: dto.observations,
-        checklist: dto.checklist,
-        materials: dto.materials
-          ? {
-              create: dto.materials.map((m) => ({
-                materialName: m.materialName,
-                quantity: m.quantity,
-                unit: m.unit,
-              })),
-            }
-          : undefined,
-      },
-      include: SERVICE_ORDER_INCLUDE,
-    });
+    return this.convertDecimals(
+      await this.prisma.serviceOrder.update({
+        where: { id },
+        data: {
+          clientId: dto.clientId,
+          workId: dto.workId,
+          status: dto.status,
+          scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
+          completedDate: dto.completedDate ? new Date(dto.completedDate) : undefined,
+          cost: dto.cost,
+          saleValue: dto.saleValue,
+          profit,
+          observations: dto.observations,
+          checklist: dto.checklist,
+          materials: dto.materials
+            ? {
+                create: dto.materials.map((m) => ({
+                  materialName: m.materialName,
+                  quantity: m.quantity,
+                  unit: m.unit,
+                })),
+              }
+            : undefined,
+        },
+        include: SERVICE_ORDER_INCLUDE,
+      }),
+    );
   }
 
   async remove(companyId: string, id: string) {
@@ -133,6 +153,60 @@ export class ServiceOrdersService {
       where: { id },
       data: { deletedAt: new Date() },
     });
+  }
+
+  /** Registra o resultado final (custo × venda) e conclui a OS se ainda não estiver. */
+  async registerResult(companyId: string, id: string, dto: RegisterServiceOrderResultDto) {
+    const existing = await this.findOne(companyId, id);
+
+    if (existing.status === 'CANCELADA') {
+      throw new BadRequestException(
+        'Não é possível registrar resultado de uma ordem de serviço cancelada',
+      );
+    }
+
+    const profit = this.calculateProfit(dto.cost, dto.saleValue);
+
+    return this.convertDecimals(
+      await this.prisma.serviceOrder.update({
+        where: { id },
+        data: {
+          cost: dto.cost,
+          saleValue: dto.saleValue,
+          profit,
+          status: 'CONCLUIDA',
+          completedDate: existing.completedDate ?? new Date(),
+        },
+        include: SERVICE_ORDER_INCLUDE,
+      }),
+    );
+  }
+
+  /** Retorna o resultado financeiro da OS: custo, venda, lucro e margem (%). */
+  async getResult(companyId: string, id: string) {
+    const existing = await this.findOne(companyId, id);
+
+    const cost = existing.cost ?? null;
+    const saleValue = existing.saleValue ?? null;
+    const profit = existing.profit ?? null;
+
+    // Margem sobre o valor de venda (mesma semântica do marginPct de Quote).
+    const profitPct =
+      profit !== null && saleValue !== null && saleValue > 0
+        ? this.round2((profit / saleValue) * 100)
+        : null;
+
+    return { cost, saleValue, profit, profitPct };
+  }
+
+  /** Calcula profit = saleValue − cost quando ambos forem informados. */
+  private calculateProfit(cost?: number, saleValue?: number): number | undefined {
+    if (cost === undefined || saleValue === undefined) return undefined;
+    return this.round2(saleValue - cost);
+  }
+
+  private round2(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 
   private async generateCode(companyId: string): Promise<number> {
@@ -167,6 +241,9 @@ export class ServiceOrdersService {
   private convertDecimals(order: any) {
     return {
       ...order,
+      cost: order.cost != null ? Number(order.cost) : null,
+      saleValue: order.saleValue != null ? Number(order.saleValue) : null,
+      profit: order.profit != null ? Number(order.profit) : null,
       materials: order.materials?.map((m: any) => ({
         ...m,
         quantity: Number(m.quantity),

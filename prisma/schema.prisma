@@ -99,8 +99,10 @@ model Company {
   measurements          Measurement[]
   compositions          Composition[]
   quotes                Quote[]
-  productionOrders      ProductionOrder[]
+  payments              Payment[]
+  expenses              Expense[]
   serviceOrders         ServiceOrder[]
+  productionOrders      ProductionOrder[]
 }
 
 model CompanyAddress {
@@ -370,6 +372,7 @@ model Client {
   company     Company    @relation(fields: [companyId], references: [id])
   works       Work[]
   quotes      Quote[]
+  payments    Payment[]
   productionOrders ProductionOrder[]
   serviceOrders    ServiceOrder[]
 
@@ -673,6 +676,9 @@ model ServiceOrder {
   status          ServiceOrderStatus  @default(PENDENTE)
   scheduledDate   DateTime?
   completedDate   DateTime?
+  cost            Decimal?            @db.Decimal(15, 2)
+  saleValue       Decimal?            @db.Decimal(15, 2)
+  profit          Decimal?            @db.Decimal(15, 2)
   observations    String?             @db.Text
   checklist       Json?
   createdAt       DateTime            @default(now())
@@ -700,4 +706,95 @@ model ServiceOrderMaterial {
   serviceOrder    ServiceOrder @relation(fields: [serviceOrderId], references: [id])
 
   @@index([serviceOrderId])
+}
+
+// ─── Fase 6 — Financeiro ───────────────────────────────────────────────────
+
+enum PaymentStatus {
+  PENDENTE
+  CONFIRMADO
+  CANCELADO
+}
+
+enum PaymentMethod {
+  DINHEIRO
+  PIX
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+  BOLETO
+  TRANSFERENCIA
+  CHEQUE
+  OUTRO
+}
+
+model Payment {
+  id            String        @id @default(uuid()) @db.Char(36)
+  companyId     String        @db.Char(36)
+  clientId      String        @db.Char(36)
+  quoteId       String?       @db.Char(36)
+  amount        Decimal       @db.Decimal(15, 2)
+  paymentMethod PaymentMethod
+  paymentDate   DateTime      @default(now())
+  dueDate       DateTime?
+  status        PaymentStatus @default(PENDENTE)
+  notes         String?       @db.Text
+  receiptUrl    String?
+  installmentCount Int        @default(1)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+  company       Company       @relation(fields: [companyId], references: [id])
+  client        Client        @relation(fields: [clientId], references: [id])
+  installments  PaymentInstallment[]
+
+  @@index([companyId])
+  @@index([clientId])
+}
+
+model PaymentInstallment {
+  id            String        @id @default(uuid()) @db.Char(36)
+  paymentId     String        @db.Char(36)
+  companyId     String        @db.Char(36)
+  installmentNumber Int
+  amount        Decimal       @db.Decimal(15, 2)
+  dueDate       DateTime
+  paidDate      DateTime?
+  status        PaymentStatus @default(PENDENTE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  payment       Payment       @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([companyId])
+}
+
+enum ExpenseCategory {
+  MATERIAL
+  MAO_DE_OBRA
+  TRANSPORTE
+  ALUGUEL
+  ENERGIA
+  AGUA
+  INTERNET
+  TELEFONE
+  MARKETING
+  IMPOSTOS
+  OUTROS
+}
+
+model Expense {
+  id           String          @id @default(uuid()) @db.Char(36)
+  companyId    String          @db.Char(36)
+  category     ExpenseCategory
+  description  String
+  amount       Decimal         @db.Decimal(15, 2)
+  expenseDate  DateTime        @default(now())
+  receiptUrl   String?
+  observations String?         @db.Text
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  deletedAt    DateTime?
+  company      Company         @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }

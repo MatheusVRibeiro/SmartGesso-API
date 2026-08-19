@@ -1,13 +1,28 @@
+import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsDateString,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { PaymentMethod, PaymentStatus } from '@prisma/client';
+
+/** DTO de uma parcela (installment) do recebimento. */
+export class CreatePaymentInstallmentDto {
+  @IsNumber()
+  @Min(0.01)
+  amount!: number;
+
+  @IsDateString()
+  dueDate!: string;
+}
 
 /** DTO para criação de recebimento (payment). */
 export class CreatePaymentDto {
@@ -45,4 +60,19 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString()
   receiptUrl?: string;
+
+  /** Quantidade de parcelas (1 = pagamento à vista). Máximo 12. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  installmentCount?: number;
+
+  /** Parcelas customizadas (amount + dueDate). Se ausente, o valor é dividido igualmente. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePaymentInstallmentDto)
+  installments?: CreatePaymentInstallmentDto[];
 }

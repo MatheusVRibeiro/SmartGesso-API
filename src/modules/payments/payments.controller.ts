@@ -39,6 +39,15 @@ export class PaymentsController {
     return this.paymentsService.create(r.company.id, dto);
   }
 
+  @Post(':id/installments/:installmentId/pay')
+  payInstallment(
+    @Req() r: any,
+    @Param('id') id: string,
+    @Param('installmentId') installmentId: string,
+  ) {
+    return this.paymentsService.payInstallment(r.company.id, id, installmentId);
+  }
+
   @Patch(':id')
   update(@Req() r: any, @Param('id') id: string, @Body() dto: UpdatePaymentDto) {
     return this.paymentsService.update(r.company.id, id, dto);
