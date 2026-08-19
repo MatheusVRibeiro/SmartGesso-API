@@ -67,6 +67,7 @@ export class QuotesService {
         visitDate: dto.visitDate,
         measurementDate: dto.measurementDate,
         warrantyDays: dto.warrantyDays,
+        validUntil: dto.validUntil,
         observations: dto.observations,
         items: {
           create: dto.items.map((item) => ({
@@ -183,6 +184,7 @@ export class QuotesService {
           visitDate: dto.visitDate,
           measurementDate: dto.measurementDate,
           warrantyDays: dto.warrantyDays,
+          validUntil: dto.validUntil,
           observations: dto.observations,
           ...(dto.items
             ? {
@@ -253,6 +255,7 @@ export class QuotesService {
         visitDate: original.visitDate,
         measurementDate: original.measurementDate,
         warrantyDays: original.warrantyDays,
+        validUntil: original.validUntil,
         observations: original.observations,
         items: {
           create: original.items.map((item) => ({
@@ -360,6 +363,7 @@ export class QuotesService {
         visitDate: original.visitDate,
         measurementDate: original.measurementDate,
         warrantyDays: original.warrantyDays,
+        validUntil: original.validUntil,
         observations: original.observations,
         items: {
           create: original.items.map((item) => ({

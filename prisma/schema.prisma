@@ -583,6 +583,7 @@ model Quote {
   visitDate       DateTime?
   measurementDate DateTime?
   warrantyDays    Int?
+  validUntil      DateTime?
   observations    String?            @db.Text
   convertedAt     DateTime?
   createdAt       DateTime           @default(now())

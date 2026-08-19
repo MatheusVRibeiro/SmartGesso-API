@@ -160,6 +160,10 @@ export class CreateQuoteDto {
   warrantyDays?: number;
 
   @IsOptional()
+  @IsDateString()
+  validUntil?: string;
+
+  @IsOptional()
   @IsString()
   observations?: string;
 
