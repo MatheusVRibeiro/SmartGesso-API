@@ -55,7 +55,7 @@ export class AuthController {
       id: r.user.id,
       name: r.user.name,
       email: r.user.email,
-      activeCompanyId: r.user.activeCompanyId,
+      activeCompanyId: r.companyId ?? null,
     };
   }
 
