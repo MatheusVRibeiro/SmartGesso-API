@@ -669,7 +669,9 @@ model ProductionOrderItem {
 
 enum ServiceOrderStatus {
   PENDENTE
+  EM_DESLOCAMENTO
   EM_ANDAMENTO
+  PAUSADA
   CONCLUIDA
   CANCELADA
 }
