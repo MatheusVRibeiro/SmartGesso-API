@@ -31,6 +31,8 @@ import { ScheduleModule as ScheduleEventsModule } from './modules/schedule/sched
 import { CompanyDashboardModule } from './modules/company-dashboard/company-dashboard.module';
 import { CompanyMembersModule } from './modules/company-members/company-members.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
   imports: [
@@ -61,8 +63,10 @@ import { InventoryModule } from './modules/inventory/inventory.module';
         ServiceOrdersModule,
         PaymentsModule,
         ScheduleEventsModule,
-        InventoryModule,
-      ],
+                InventoryModule,
+                NotificationsModule,
+                UploadsModule,
+              ],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })
 export class AppModule implements NestModule {
