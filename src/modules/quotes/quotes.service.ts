@@ -18,6 +18,7 @@ const QUOTE_INCLUDE = {
 const SERVICE_ORDER_INCLUDE = {
   client: { select: { id: true, name: true } },
   work: { select: { id: true, name: true } },
+  quote: { select: { id: true, quoteNumber: true, version: true } },
   materials: true,
 } as const;
 
@@ -329,6 +330,7 @@ export class QuotesService {
           companyId,
           clientId: updated.clientId,
           workId: updated.workId ?? undefined,
+          quoteId: id,
           code,
           status: 'PENDENTE',
           scheduledDate: updated.startDate
@@ -462,6 +464,7 @@ export class QuotesService {
           companyId,
           clientId: quote.clientId,
           workId: quote.workId ?? undefined,
+          quoteId: quote.id,
           code,
           status: 'PENDENTE',
           scheduledDate: quote.startDate

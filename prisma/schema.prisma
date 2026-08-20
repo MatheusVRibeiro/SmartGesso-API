@@ -120,6 +120,8 @@ model Company {
   productionOrders      ProductionOrder[]
   scheduleEvents        ScheduleEvent[]
   inventoryMovements    InventoryMovement[]
+  pushTokens            PushToken[]
+  notifications         Notification[]
 }
 
 model CompanyAddress {
@@ -261,6 +263,7 @@ model User {
   updatedAt       DateTime        @updatedAt
   deletedAt       DateTime?
   members         CompanyMember[]
+  pushTokens      PushToken[]
 }
 
 model CompanyMember {
@@ -595,6 +598,7 @@ model Quote {
   items           QuoteItem[]
   history         QuoteHistory[]
   scheduleEvents  ScheduleEvent[]
+  serviceOrders   ServiceOrder[]
 
   @@unique([companyId, quoteNumber, version])
   @@index([companyId])
@@ -706,6 +710,7 @@ model ServiceOrder {
   companyId          String                 @db.Char(36)
   clientId           String                 @db.Char(36)
   workId             String?                @db.Char(36)
+  quoteId            String?                @db.Char(36)
   code               Int
   status             ServiceOrderStatus     @default(PENDENTE)
   scheduledDate      DateTime?
@@ -721,6 +726,7 @@ model ServiceOrder {
   company            Company                @relation(fields: [companyId], references: [id])
   client             Client                 @relation(fields: [clientId], references: [id])
   work               Work?                  @relation(fields: [workId], references: [id])
+  quote              Quote?                 @relation(fields: [quoteId], references: [id])
   materials          ServiceOrderMaterial[]
   scheduleEvents     ScheduleEvent[]
   inventoryMovements InventoryMovement[]
@@ -729,6 +735,7 @@ model ServiceOrder {
   @@index([companyId])
   @@index([clientId])
   @@index([workId])
+  @@index([quoteId])
 }
 
 model ServiceOrderMaterial {
@@ -902,4 +909,43 @@ model ScheduleEvent {
   @@index([serviceOrderId])
   @@index([quoteId])
   @@index([date])
+}
+
+// ─── Fase 8 — Notificações Push ────────────────────────────────────────────
+
+enum PushTokenPlatform {
+  ANDROID
+  IOS
+}
+
+model PushToken {
+  id        String            @id @default(uuid()) @db.Char(36)
+  companyId String            @db.Char(36)
+  userId    String            @db.Char(36)
+  token     String            @db.VarChar(512)
+  platform  PushTokenPlatform @default(ANDROID)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  deletedAt DateTime?
+  company   Company           @relation(fields: [companyId], references: [id])
+  user      User              @relation(fields: [userId], references: [id])
+
+  @@unique([companyId, token])
+  @@index([companyId])
+  @@index([userId])
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Char(36)
+  companyId String   @db.Char(36)
+  type      String   @default("GENERIC")
+  title     String
+  body      String   @db.Text
+  data      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@index([createdAt])
 }
