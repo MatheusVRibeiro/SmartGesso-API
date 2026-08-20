@@ -25,6 +25,20 @@ type QuoteWithRelations = Prisma.QuoteGetPayload<{
   include: typeof QUOTE_INCLUDE;
 }>;
 
+/**
+ * Converte data recebida do payload em Date para o Prisma.
+ * Aceita AAAA-MM-DD (formato usado pelo mobile) ou ISO completo.
+ * Retorna undefined para valores vazios/nulos/inválidos.
+ */
+function parseDateInput(value?: string | null): Date | undefined {
+  if (!value) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T00:00:00.000Z`);
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
 @Injectable()
 export class QuotesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -60,14 +74,14 @@ export class QuotesService {
         paymentMethod: dto.paymentMethod,
         paymentTerms: dto.paymentTerms,
         localAddress: dto.localAddress ? { ...dto.localAddress } : undefined,
-        startDate: dto.startDate,
+        startDate: parseDateInput(dto.startDate),
         durationDays: dto.durationDays,
-        endDate: dto.endDate,
-        deadlineDate: dto.deadlineDate,
-        visitDate: dto.visitDate,
-        measurementDate: dto.measurementDate,
+        endDate: parseDateInput(dto.endDate),
+        deadlineDate: parseDateInput(dto.deadlineDate),
+        visitDate: parseDateInput(dto.visitDate),
+        measurementDate: parseDateInput(dto.measurementDate),
         warrantyDays: dto.warrantyDays,
-        validUntil: dto.validUntil,
+        validUntil: parseDateInput(dto.validUntil),
         observations: dto.observations,
         items: {
           create: dto.items.map((item) => ({
@@ -177,14 +191,14 @@ export class QuotesService {
           paymentMethod: dto.paymentMethod,
           paymentTerms: dto.paymentTerms,
           localAddress: dto.localAddress ? { ...dto.localAddress } : undefined,
-          startDate: dto.startDate,
+          startDate: parseDateInput(dto.startDate),
           durationDays: dto.durationDays,
-          endDate: dto.endDate,
-          deadlineDate: dto.deadlineDate,
-          visitDate: dto.visitDate,
-          measurementDate: dto.measurementDate,
+          endDate: parseDateInput(dto.endDate),
+          deadlineDate: parseDateInput(dto.deadlineDate),
+          visitDate: parseDateInput(dto.visitDate),
+          measurementDate: parseDateInput(dto.measurementDate),
           warrantyDays: dto.warrantyDays,
-          validUntil: dto.validUntil,
+          validUntil: parseDateInput(dto.validUntil),
           observations: dto.observations,
           ...(dto.items
             ? {
@@ -301,6 +315,34 @@ export class QuotesService {
       await tx.quoteHistory.create({
         data: { quoteId: id, status: 'APROVADO', note: 'Orçamento aprovado' },
       });
+
+      // V3 §28: orçamento aprovado → cria o serviço automaticamente,
+      // reaproveitando cliente, obra, prazo e valor total.
+      const lastOrder = await tx.serviceOrder.findFirst({
+        where: { companyId },
+        orderBy: { code: 'desc' },
+        select: { code: true },
+      });
+      const code = (lastOrder?.code ?? 0) + 1;
+      await tx.serviceOrder.create({
+        data: {
+          companyId,
+          clientId: updated.clientId,
+          workId: updated.workId ?? undefined,
+          code,
+          status: 'PENDENTE',
+          scheduledDate: updated.startDate
+            ? new Date(updated.startDate)
+            : undefined,
+          saleValue: Number(updated.total),
+          observations: updated.observations ?? undefined,
+        },
+      });
+      await tx.quote.update({
+        where: { id },
+        data: { convertedAt: new Date() },
+      });
+
       return this.convertDecimals(updated);
     });
   }
