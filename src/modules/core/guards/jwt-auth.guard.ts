@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../../database/prisma.service';
+import { requireSecret } from '../../auth/auth.service';
 
 export interface TokenPayload {
   sub: string;
@@ -40,7 +41,7 @@ export class JwtAuthGuard implements CanActivate {
       }
 
       const payload = this.jwt.verify<TokenPayload>(token, {
-        secret: process.env.JWT_ACCESS_SECRET || 'dev-user-access',
+        secret: requireSecret('JWT_ACCESS_SECRET'),
       });
 
       const user = await this.prisma.user.findFirst({

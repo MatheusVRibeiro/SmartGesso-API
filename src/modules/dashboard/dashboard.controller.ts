@@ -1,4 +1,3 @@
-// @ts-nocheck — erros pré-existentes no dashboard platform
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../../database/prisma.service';
@@ -17,7 +16,6 @@ export class DashboardController {
     const activeCompanies = await this.prisma.company.count({ where: { status: 'ACTIVE' } });
     const suspendedCompanies = await this.prisma.company.count({ where: { status: 'SUSPENDED' } });
     const blockedCompanies = await this.prisma.company.count({ where: { status: 'BLOCKED' } });
-    const trialCompanies = await this.prisma.company.count({ where: { status: 'TRIAL' } });
 
     const currentMonth = new Date();
     currentMonth.setDate(1);
@@ -42,17 +40,17 @@ export class DashboardController {
       },
     });
 
-    const totalInstallments = await this.prisma.installment.aggregate({
+    const totalInstallments = await this.prisma.subscriptionInstallment.aggregate({
       _sum: { amount: true },
       where: { status: 'PAID' },
     });
 
-    const pendingInstallments = await this.prisma.installment.aggregate({
+    const pendingInstallments = await this.prisma.subscriptionInstallment.aggregate({
       _sum: { amount: true },
       where: { status: 'PENDING' },
     });
 
-    const overdueInstallments = await this.prisma.installment.count({
+    const overdueInstallments = await this.prisma.subscriptionInstallment.count({
       where: {
         status: 'PENDING',
         dueDate: { lt: new Date() },
@@ -64,7 +62,6 @@ export class DashboardController {
       activeCompanies,
       suspendedCompanies,
       blockedCompanies,
-      trialCompanies,
       newCompanies,
       totalSubscriptions,
       activeSubscriptions,

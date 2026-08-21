@@ -11,25 +11,57 @@ export async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   app.use(helmet());
-  app.enableCors({ origin: true, credentials: true });
+
+  // CORS com allowlist de origens (fail-closed: sem env vars, só localhost de dev).
+  const corsOrigins = [
+    ...(process.env.CORS_MOBILE_ORIGINS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    ...(process.env.CORS_ADMIN_WEB_ORIGINS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  ];
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (isDev && corsOrigins.length === 0) {
+    corsOrigins.push('http://localhost:3000', 'http://localhost:8081', 'http://localhost:5173');
+  }
+  app.enableCors({
+    origin: corsOrigins.length > 0 ? corsOrigins : false,
+    credentials: true,
+  });
+
   // Serve arquivos enviados (fotos) estaticamente em /uploads.
-  app.useStaticAssets(UPLOADS_DIR, { prefix: UPLOADS_PREFIX });
+  app.useStaticAssets(UPLOADS_DIR, {
+    prefix: UPLOADS_PREFIX,
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+    },
+  });
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );
   const prefix = process.env.API_PREFIX ?? 'api/v1';
   app.setGlobalPrefix(prefix);
-  const config = new DocumentBuilder()
-    .setTitle('SmartGesso API')
-    .setDescription('API SaaS multiempresa para SmartGesso Mobile e Admin Web')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
+
+  // Swagger apenas fora de produção (não expor superfície da API).
+  if (isDev) {
+    const config = new DocumentBuilder()
+      .setTitle('SmartGesso API')
+      .setDescription('API SaaS multiempresa para SmartGesso Mobile e Admin Web')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
+  }
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
   logger.log(`🚀 API rodando em: http://localhost:${port}/${prefix}`);
-  logger.log(`📚 Swagger Docs em: http://localhost:${port}/docs`);
+  if (isDev) {
+    logger.log(`📚 Swagger Docs em: http://localhost:${port}/docs`);
+  }
 }
 if (require.main === module) void bootstrap();

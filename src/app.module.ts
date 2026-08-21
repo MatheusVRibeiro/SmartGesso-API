@@ -1,9 +1,9 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { PrismaModule } from './database/prisma.module';
@@ -67,7 +67,10 @@ import { UploadsModule } from './modules/uploads/uploads.module';
                 NotificationsModule,
                 UploadsModule,
               ],
-  providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
+  providers: [
+    { provide: APP_FILTER, useClass: HttpExceptionFilter },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

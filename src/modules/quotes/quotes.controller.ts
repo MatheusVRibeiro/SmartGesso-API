@@ -103,8 +103,7 @@ export class QuotesController {
       res.setHeader('Content-Disposition', `attachment; filename="orcamento-${id}.pdf"`);
       pdf.pipe(res);
     } catch (error) {
-      console.error('PDF ERROR:', error);
-      res.status(500).json({ statusCode: 500, message: 'Erro ao gerar PDF', detail: String(error) });
+      res.status(500).json({ statusCode: 500, message: 'Erro ao gerar PDF' });
     }
   }
 }

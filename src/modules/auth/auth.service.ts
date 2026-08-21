@@ -10,6 +10,21 @@ import * as argon2 from 'argon2';
 import { PrismaService } from '../../database/prisma.service';
 
 // ---------------------------------------------------------------------------
+// Secrets fail-closed: sem JWT_*_SECRET no ambiente, a API NÃO inicia assinatura.
+// Fallbacks hardcoded foram removidos (forjar JWT = acesso total).
+// ---------------------------------------------------------------------------
+export function requireSecret(key: string): string {
+  const v = process.env[key];
+  if (!v || v.length < 16) {
+    throw new Error(
+      `[SECURITY] ${key} ausente ou curto demais no ambiente. ` +
+        'Defina um secret forte (64+ chars) antes de iniciar a API.',
+    );
+  }
+  return v;
+}
+
+// ---------------------------------------------------------------------------
 // Tipos auxiliares
 // ---------------------------------------------------------------------------
 export interface TokenPair {
@@ -76,11 +91,11 @@ export class AuthService {
   // -----------------------------------------------------------------------
   private platformTokens(sub: string): TokenPair {
     const accessOpts: any = {
-      secret: process.env.PLATFORM_JWT_ACCESS_SECRET || 'dev-platform-access',
+      secret: requireSecret('PLATFORM_JWT_ACCESS_SECRET'),
       expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
     };
     const refreshOpts: any = {
-      secret: process.env.PLATFORM_JWT_REFRESH_SECRET || 'dev-platform-refresh',
+      secret: requireSecret('PLATFORM_JWT_REFRESH_SECRET'),
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
     };
     return {
@@ -91,11 +106,11 @@ export class AuthService {
 
   private userTokens(sub: string, companyId?: string): TokenPair {
     const accessOpts: any = {
-      secret: process.env.JWT_ACCESS_SECRET || 'dev-user-access',
+      secret: requireSecret('JWT_ACCESS_SECRET'),
       expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
     };
     const refreshOpts: any = {
-      secret: process.env.JWT_REFRESH_SECRET || 'dev-user-refresh',
+      secret: requireSecret('JWT_REFRESH_SECRET'),
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
     };
     return {
@@ -313,7 +328,7 @@ export class AuthService {
   }
 
   async platformRefresh(refreshToken: string): Promise<TokenPair> {
-    const secret = process.env.PLATFORM_JWT_REFRESH_SECRET || 'dev-platform-refresh';
+    const secret = requireSecret('PLATFORM_JWT_REFRESH_SECRET');
     const result = await this.rotateSession(refreshToken, secret, 'platform');
     return result.tokens;
   }
@@ -370,7 +385,7 @@ export class AuthService {
   }
 
   async userRefresh(refreshToken: string): Promise<TokenPair> {
-    const secret = process.env.JWT_REFRESH_SECRET || 'dev-user-refresh';
+    const secret = requireSecret('JWT_REFRESH_SECRET');
     const result = await this.rotateSession(refreshToken, secret, 'user');
     return result.tokens;
   }

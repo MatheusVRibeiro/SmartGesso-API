@@ -37,10 +37,18 @@ export class CompanyAccessGuard implements CanActivate {
       }),
     ]);
 
+    const isExpired =
+      subscription?.endDate && new Date(subscription.endDate) < new Date();
+    const isGraceExpired =
+      subscription?.gracePeriodEnd &&
+      new Date(subscription.gracePeriodEnd) < new Date();
+
     const blocked =
       !subscription ||
       ['SUSPENDED', 'BLOCKED'].includes(company.status) ||
-      ['SUSPENDED', 'CANCELLED', 'EXPIRED'].includes(subscription?.status as any);
+      ['SUSPENDED', 'CANCELLED', 'EXPIRED'].includes(subscription?.status as any) ||
+      !!isExpired ||
+      !!isGraceExpired;
 
     if (blocked) {
       throw new HttpException(
