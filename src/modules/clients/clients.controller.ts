@@ -16,6 +16,7 @@ import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { ClientsService } from './clients.service';
 import { CreateClientDto, UpdateClientDto } from './dto';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
 @ApiTags('clients')
 @ApiBearerAuth()
@@ -25,9 +26,9 @@ export class ClientsController {
   constructor(private readonly clients: ClientsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Lista clientes da empresa' })
-  list(@Req() r: any, @Query('search') search?: string) {
-    return this.clients.findAll(r.company.id, search);
+  @ApiOperation({ summary: 'Lista clientes da empresa (paginado)' })
+  list(@Req() r: any, @Query() pagination: PaginationDto, @Query('search') search?: string) {
+    return this.clients.findAll(r.company.id, pagination, search);
   }
 
   @Get(':id')

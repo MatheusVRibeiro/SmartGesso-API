@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateClientDto, UpdateClientDto } from './dto';
+import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination.dto';
+import { paginate } from '../../common/utils/paginate';
 
 @Injectable()
 export class ClientsService {
@@ -31,7 +33,11 @@ export class ClientsService {
   }
 
   /** Lista clientes não-deletados da empresa, ordenados por name asc. Suporta ?search=. */
-  async findAll(companyId: string, search?: string) {
+  async findAll(
+    companyId: string,
+    pagination: PaginationDto,
+    search?: string,
+  ): Promise<PaginatedResponseDto<any>> {
     const where: Prisma.ClientWhereInput = {
       companyId,
       deletedAt: null,
@@ -46,10 +52,7 @@ export class ClientsService {
       ];
     }
 
-    return this.prisma.client.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
+    return paginate(this.prisma.client, where, pagination, { name: 'asc' });
   }
 
   /** Busca um cliente por id, scoped pela empresa. */
