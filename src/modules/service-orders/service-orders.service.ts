@@ -59,7 +59,6 @@ export class ServiceOrdersService {
         }),
       );
     } catch (error) {
-      console.error('SERVICE_ORDER CREATE ERROR:', error);
       throw error;
     }
   }
