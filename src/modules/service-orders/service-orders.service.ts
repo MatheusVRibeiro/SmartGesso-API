@@ -112,14 +112,14 @@ export class ServiceOrdersService {
     const profit = this.calculateProfit(cost, saleValue);
 
     // Se há materiais para atualizar, deletar os existentes e criar novos
-    if (dto.materials) {
-      await this.prisma.serviceOrderMaterial.deleteMany({
-        where: { serviceOrderId: id },
-      });
-    }
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.materials) {
+        await tx.serviceOrderMaterial.deleteMany({
+          where: { serviceOrderId: id },
+        });
+      }
 
-    return this.convertDecimals(
-      await this.prisma.serviceOrder.update({
+      const updated = await tx.serviceOrder.update({
         where: { id },
         data: {
           clientId: dto.clientId,
@@ -143,8 +143,10 @@ export class ServiceOrdersService {
             : undefined,
         },
         include: SERVICE_ORDER_INCLUDE,
-      }),
-    );
+      });
+
+      return this.convertDecimals(updated);
+    });
   }
 
   async remove(companyId: string, id: string) {
