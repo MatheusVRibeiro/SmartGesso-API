@@ -45,6 +45,11 @@ export class ServiceOrdersController {
     return this.serviceOrdersService.getResult(r.company.id, id);
   }
 
+  @Get(':id/financial-summary')
+  getFinancialSummary(@Req() r: any, @Param('id') id: string) {
+    return this.serviceOrdersService.getFinancialSummary(r.company.id, id);
+  }
+
   @Patch(':id/result')
   registerResult(
     @Req() r: any,

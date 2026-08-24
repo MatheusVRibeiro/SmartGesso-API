@@ -775,6 +775,8 @@ model ServiceOrder {
   materials          ServiceOrderMaterial[]
   scheduleEvents     ScheduleEvent[]
   inventoryMovements InventoryMovement[]
+  expenses           Expense[]
+  payments           Payment[]
 
   @@unique([companyId, code])
   @@unique([companyId, quoteId])
@@ -842,6 +844,7 @@ model Payment {
   companyId        String               @db.Char(36)
   clientId         String               @db.Char(36)
   quoteId          String?              @db.Char(36)
+  serviceOrderId   String?              @db.Char(36)
   amount           Decimal              @db.Decimal(15, 2)
   paymentMethod    PaymentMethod
   paymentDate      DateTime             @default(now())
@@ -855,10 +858,12 @@ model Payment {
   deletedAt        DateTime?
   company          Company              @relation(fields: [companyId], references: [id])
   client           Client               @relation(fields: [clientId], references: [id])
+  serviceOrder     ServiceOrder?        @relation(fields: [serviceOrderId], references: [id])
   installments     PaymentInstallment[]
 
   @@index([companyId])
   @@index([clientId])
+  @@index([serviceOrderId])
 }
 
 model PaymentInstallment {
@@ -893,20 +898,23 @@ enum ExpenseCategory {
 }
 
 model Expense {
-  id           String          @id @default(uuid()) @db.Char(36)
-  companyId    String          @db.Char(36)
-  category     ExpenseCategory
-  description  String
-  amount       Decimal         @db.Decimal(15, 2)
-  expenseDate  DateTime        @default(now())
-  receiptUrl   String?
-  observations String?         @db.Text
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  deletedAt    DateTime?
-  company      Company         @relation(fields: [companyId], references: [id])
+  id             String          @id @default(uuid()) @db.Char(36)
+  companyId        String          @db.Char(36)
+  serviceOrderId   String?         @db.Char(36)
+  category         ExpenseCategory
+  description      String
+  amount           Decimal         @db.Decimal(15, 2)
+  expenseDate      DateTime        @default(now())
+  receiptUrl       String?
+  observations     String?         @db.Text
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+  company          Company         @relation(fields: [companyId], references: [id])
+  serviceOrder     ServiceOrder?   @relation(fields: [serviceOrderId], references: [id])
 
   @@index([companyId])
+  @@index([serviceOrderId])
 }
 
 // ─── Fase 7 — Agenda ────────────────────────────────────────────────────────

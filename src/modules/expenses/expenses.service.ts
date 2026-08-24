@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
@@ -9,9 +9,13 @@ export class ExpensesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(companyId: string, dto: CreateExpenseDto) {
+    if (dto.serviceOrderId) {
+      await this.ensureServiceOrderBelongsToCompany(companyId, dto.serviceOrderId);
+    }
     return this.prisma.expense.create({
       data: {
         companyId,
+        serviceOrderId: dto.serviceOrderId,
         category: dto.category,
         description: dto.description,
         amount: dto.amount,
@@ -56,7 +60,9 @@ export class ExpensesService {
 
   async update(companyId: string, id: string, dto: UpdateExpenseDto) {
     await this.findOne(companyId, id);
-
+    if (dto.serviceOrderId) {
+      await this.ensureServiceOrderBelongsToCompany(companyId, dto.serviceOrderId);
+    }
     return this.prisma.expense.update({
       where: { id },
       data: {
@@ -66,6 +72,7 @@ export class ExpensesService {
         expenseDate: dto.expenseDate ? new Date(dto.expenseDate) : undefined,
         receiptUrl: dto.receiptUrl,
         observations: dto.observations,
+        serviceOrderId: dto.serviceOrderId,
       },
     });
   }
@@ -84,5 +91,20 @@ export class ExpensesService {
       ...expense,
       amount: Number(expense.amount),
     };
+  }
+
+  private async ensureServiceOrderBelongsToCompany(
+    companyId: string,
+    serviceOrderId: string,
+  ) {
+    const so = await this.prisma.serviceOrder.findFirst({
+      where: { id: serviceOrderId, companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!so) {
+      throw new BadRequestException(
+        'Ordem de serviço inválida: não pertence à empresa ativa',
+      );
+    }
   }
 }

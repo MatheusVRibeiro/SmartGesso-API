@@ -31,6 +31,9 @@ export class PaymentsService {
       if (dto.quoteId) {
         await this.ensureQuoteBelongsToCompany(companyId, dto.quoteId);
       }
+      if (dto.serviceOrderId) {
+        await this.ensureServiceOrderBelongsToCompany(companyId, dto.serviceOrderId);
+      }
 
       const installmentCount = dto.installments?.length ?? dto.installmentCount ?? 1;
       if (installmentCount > MAX_INSTALLMENTS) {
@@ -44,6 +47,9 @@ export class PaymentsService {
         company: { connect: { id: companyId } },
         client: { connect: { id: dto.clientId } },
         ...(dto.quoteId ? { quote: { connect: { id: dto.quoteId } } } : {}),
+        ...(dto.serviceOrderId
+          ? { serviceOrder: { connect: { id: dto.serviceOrderId } } }
+          : {}),
         amount: dto.amount,
         paymentMethod: dto.paymentMethod,
         paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined,
@@ -105,12 +111,16 @@ export class PaymentsService {
     if (dto.quoteId) {
       await this.ensureQuoteBelongsToCompany(companyId, dto.quoteId);
     }
+    if (dto.serviceOrderId) {
+      await this.ensureServiceOrderBelongsToCompany(companyId, dto.serviceOrderId);
+    }
 
     const payment = await this.prisma.payment.update({
       where: { id },
       data: {
         clientId: dto.clientId,
         quoteId: dto.quoteId,
+        serviceOrderId: dto.serviceOrderId,
         amount: dto.amount,
         paymentMethod: dto.paymentMethod,
         paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined,
@@ -231,6 +241,21 @@ export class PaymentsService {
     });
     if (!quote) {
       throw new BadRequestException('Orçamento inválido: não pertence à empresa ativa');
+    }
+  }
+
+  private async ensureServiceOrderBelongsToCompany(
+    companyId: string,
+    serviceOrderId: string,
+  ) {
+    const so = await this.prisma.serviceOrder.findFirst({
+      where: { id: serviceOrderId, companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!so) {
+      throw new BadRequestException(
+        'Ordem de serviço inválida: não pertence à empresa ativa',
+      );
     }
   }
 

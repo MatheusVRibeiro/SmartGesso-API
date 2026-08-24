@@ -205,6 +205,111 @@ export class ServiceOrdersService {
     return { cost, saleValue, profit, profitPct };
   }
 
+  /**
+   * Resumo financeiro auditável da OS — fonte única para resultado.
+   *
+   * Todos os valores são calculados a partir de dados reais (payments e
+   * expenses vinculados à OS). O campo `profit` do schema NÃO é considerado
+   * confiável — é um cache que pode estar desatualizado.
+   *
+   * additionalApproved é 0 por enquanto (preparado para Aditivos futuros).
+   */
+  async getFinancialSummary(companyId: string, id: string) {
+    const order = await this.prisma.serviceOrder.findFirst({
+      where: { id, companyId, deletedAt: null },
+      include: {
+        quote: { select: { total: true } },
+      },
+    });
+    if (!order) throw new NotFoundException('Ordem de serviço não encontrada');
+
+    // 1. contractedValue: saleValue da OS, com fallback para quote.total
+    const contractedValue =
+      order.saleValue != null
+        ? Number(order.saleValue)
+        : order.quote?.total != null
+          ? Number(order.quote.total)
+          : 0;
+
+    // 2. additionalApproved: 0 por enquanto (placeholder para Aditivos)
+    const additionalApproved = 0;
+
+    // 3. totalContracted
+    const totalContracted = contractedValue + additionalApproved;
+
+    // 4. received: soma de payments CONFIRMADO vinculados à OS
+    //    - Payments sem parcelas (installmentCount = 1): status CONFIRMADO → amount
+    //    - Payments com parcelas: soma das parcelas CONFIRMADO
+    const directPayments = await this.prisma.payment.aggregate({
+      where: {
+        serviceOrderId: id,
+        companyId,
+        deletedAt: null,
+        status: 'CONFIRMADO',
+        installmentCount: 1,
+      },
+      _sum: { amount: true },
+    });
+
+    const installmentPayments = await this.prisma.paymentInstallment.aggregate({
+      where: {
+        payment: {
+          serviceOrderId: id,
+          companyId,
+          deletedAt: null,
+        },
+        status: 'CONFIRMADO',
+      },
+      _sum: { amount: true },
+    });
+
+    const received =
+      Number(directPayments._sum.amount ?? 0) +
+      Number(installmentPayments._sum.amount ?? 0);
+
+    // 5. toReceive: totalContracted - received
+    const toReceive = totalContracted - received;
+
+    // 6. forecastCost: custo planejado (ServiceOrder.cost)
+    const forecastCost = order.cost != null ? Number(order.cost) : 0;
+
+    // 7. realizedCost: soma de expenses vinculados à OS
+    const expensesSum = await this.prisma.expense.aggregate({
+      where: {
+        serviceOrderId: id,
+        companyId,
+        deletedAt: null,
+      },
+      _sum: { amount: true },
+    });
+    const realizedCost = Number(expensesSum._sum.amount ?? 0);
+
+    // 8. projectedResult: totalContracted - forecastCost
+    const projectedResult = totalContracted - forecastCost;
+
+    // 9. cashResult: received - realizedCost
+    const cashResult = received - realizedCost;
+
+    // 10. margin: projectedResult / totalContracted * 100
+    const margin =
+      totalContracted > 0
+        ? this.round2((projectedResult / totalContracted) * 100)
+        : null;
+
+    return {
+      contractedValue: this.round2(contractedValue),
+      additionalApproved,
+      totalContracted: this.round2(totalContracted),
+      received: this.round2(received),
+      toReceive: this.round2(toReceive),
+      forecastCost: this.round2(forecastCost),
+      realizedCost: this.round2(realizedCost),
+      projectedResult: this.round2(projectedResult),
+      cashResult: this.round2(cashResult),
+      margin,
+    };
+  }
+
   /** Calcula profit = saleValue − cost quando ambos forem informados. */
   private calculateProfit(cost?: number, saleValue?: number): number | undefined {
     if (cost === undefined || saleValue === undefined) return undefined;

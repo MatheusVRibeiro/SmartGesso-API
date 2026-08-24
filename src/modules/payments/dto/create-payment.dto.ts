@@ -75,4 +75,10 @@ export class CreatePaymentDto {
   @ValidateNested({ each: true })
   @Type(() => CreatePaymentInstallmentDto)
   installments?: CreatePaymentInstallmentDto[];
+
+  /** Ordem de serviço vinculada (opcional). Quando informado, o recebimento
+   *  é contabilizado como entrada direta da OS no financial-summary. */
+  @IsOptional()
+  @IsString()
+  serviceOrderId?: string;
 }
