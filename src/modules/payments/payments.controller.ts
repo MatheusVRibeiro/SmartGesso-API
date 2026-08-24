@@ -10,7 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
@@ -26,21 +26,25 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Get()
+  @ApiOperation({ summary: 'Lista pagamentos da empresa' })
   findAll(@Req() r: any, @Query('status') status?: string) {
     return this.paymentsService.findAll(r.company.id, status);
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Busca pagamento por ID' })
   findOne(@Req() r: any, @Param('id') id: string) {
     return this.paymentsService.findOne(r.company.id, id);
   }
 
   @Post()
+  @ApiOperation({ summary: 'Cria novo pagamento' })
   create(@Req() r: any, @Body() dto: CreatePaymentDto) {
     return this.paymentsService.create(r.company.id, dto);
   }
 
   @Post(':id/installments/:installmentId/pay')
+  @ApiOperation({ summary: 'Registra pagamento de parcela' })
   payInstallment(
     @Req() r: any,
     @Param('id') id: string,
@@ -50,11 +54,13 @@ export class PaymentsController {
   }
 
   @Patch(':id')
+  @ApiOperation({ summary: 'Atualiza pagamento' })
   update(@Req() r: any, @Param('id') id: string, @Body() dto: UpdatePaymentDto) {
     return this.paymentsService.update(r.company.id, id, dto);
   }
 
   @Delete(':id')
+  @ApiOperation({ summary: 'Remove pagamento' })
   remove(@Req() r: any, @Param('id') id: string) {
     return this.paymentsService.remove(r.company.id, id);
   }

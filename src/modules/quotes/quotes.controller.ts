@@ -34,6 +34,7 @@ export class QuotesController {
   ) {}
 
   @Get()
+  @ApiOperation({ summary: 'Lista orçamentos da empresa' })
   findAll(
     @Req() r: any,
     @Query('search') search?: string,
@@ -43,26 +44,31 @@ export class QuotesController {
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Busca orçamento por ID' })
   findOne(@Req() r: any, @Param('id') id: string) {
     return this.quotesService.findOne(r.company.id, id);
   }
 
   @Post()
+  @ApiOperation({ summary: 'Cria novo orçamento' })
   create(@Req() r: any, @Body() dto: CreateQuoteDto) {
     return this.quotesService.create(r.company.id, dto);
   }
 
   @Patch(':id')
+  @ApiOperation({ summary: 'Atualiza orçamento' })
   update(@Req() r: any, @Param('id') id: string, @Body() dto: UpdateQuoteDto) {
     return this.quotesService.update(r.company.id, id, dto);
   }
 
   @Delete(':id')
+  @ApiOperation({ summary: 'Remove orçamento' })
   remove(@Req() r: any, @Param('id') id: string) {
     return this.quotesService.remove(r.company.id, id);
   }
 
   @Post(':id/version')
+  @ApiOperation({ summary: 'Cria nova versão do orçamento' })
   createVersion(@Req() r: any, @Param('id') id: string) {
     return this.quotesService.createVersion(r.company.id, id);
   }
@@ -103,6 +109,7 @@ export class QuotesController {
   }
 
   @Get(':id/pdf')
+  @ApiOperation({ summary: 'Gera PDF do orçamento' })
   async generatePdf(@Req() r: any, @Param('id') id: string, @Res() res: Response) {
     try {
       const pdf = await this.quotesPdfService.generatePdf(id, r.company.id);

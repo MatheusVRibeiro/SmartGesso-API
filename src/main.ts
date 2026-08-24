@@ -57,8 +57,11 @@ export async function bootstrap() {
   const prefix = process.env.API_PREFIX ?? 'api/v1';
   app.setGlobalPrefix(prefix);
 
-  // Swagger apenas fora de produção (não expor superfície da API).
-  if (isDev) {
+  // Swagger via env SWAGGER_ENABLED (default: true em dev, false em prod)
+  const swaggerEnabled = process.env.SWAGGER_ENABLED !== undefined
+    ? process.env.SWAGGER_ENABLED === 'true'
+    : isDev;
+  if (swaggerEnabled) {
     const config = new DocumentBuilder()
       .setTitle('SmartGesso API')
       .setDescription('API SaaS multiempresa para SmartGesso Mobile e Admin Web')
@@ -71,7 +74,7 @@ export async function bootstrap() {
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
   logger.log(`🚀 API rodando em: http://localhost:${port}/${prefix}`);
-  if (isDev) {
+  if (swaggerEnabled) {
     logger.log(`📚 Swagger Docs em: http://localhost:${port}/docs`);
   }
 }

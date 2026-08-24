@@ -10,7 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
@@ -26,6 +26,7 @@ export class ExpensesController {
   constructor(private readonly expensesService: ExpensesService) {}
 
   @Get()
+  @ApiOperation({ summary: 'Lista despesas da empresa' })
   findAll(
     @Req() r: any,
     @Query('search') search?: string,
@@ -35,21 +36,25 @@ export class ExpensesController {
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Busca despesa por ID' })
   findOne(@Req() r: any, @Param('id') id: string) {
     return this.expensesService.findOne(r.company.id, id);
   }
 
   @Post()
+  @ApiOperation({ summary: 'Cria nova despesa' })
   create(@Req() r: any, @Body() dto: CreateExpenseDto) {
     return this.expensesService.create(r.company.id, dto);
   }
 
   @Patch(':id')
+  @ApiOperation({ summary: 'Atualiza despesa' })
   update(@Req() r: any, @Param('id') id: string, @Body() dto: UpdateExpenseDto) {
     return this.expensesService.update(r.company.id, id, dto);
   }
 
   @Delete(':id')
+  @ApiOperation({ summary: 'Remove despesa' })
   remove(@Req() r: any, @Param('id') id: string) {
     return this.expensesService.remove(r.company.id, id);
   }

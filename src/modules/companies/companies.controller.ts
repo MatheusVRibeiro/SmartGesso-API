@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
@@ -16,23 +16,27 @@ export class CompanyController {
   constructor(private biz: BusinessService) {}
 
   @Get('access-status')
+  @ApiOperation({ summary: 'Status de acesso e plano da empresa' })
   access(@Req() r: any) {
     return this.biz.accessStatus(r.company.id);
   }
 
   @Get('permissions')
+  @ApiOperation({ summary: 'Permissões do membro logado' })
   perms(@Req() r: any) {
     return { permissions: r.member.permissions };
   }
 
   @UseGuards(CompanyAccessGuard, PermissionsGuard)
   @Get('profile')
+  @ApiOperation({ summary: 'Dados da empresa' })
   profile(@Req() r: any) {
     return r.company;
   }
 
   @UseGuards(CompanyAccessGuard, PermissionsGuard)
   @Patch('profile')
+  @ApiOperation({ summary: 'Atualiza dados da empresa' })
   patch(
     @Req() r: any,
     @Body() dto: UpdateCompanyDto,
@@ -42,12 +46,14 @@ export class CompanyController {
 
   @UseGuards(CompanyAccessGuard, PermissionsGuard)
   @Get('branding')
+  @ApiOperation({ summary: 'Dados de branding da empresa' })
   branding(@Req() r: any) {
     return this.biz.branding(r.company.id);
   }
 
   @UseGuards(CompanyAccessGuard, PermissionsGuard)
   @Patch('branding')
+  @ApiOperation({ summary: 'Atualiza branding da empresa' })
   patchBranding(
     @Req() r: any,
     @Body() dto: UpdateBrandingDto,
