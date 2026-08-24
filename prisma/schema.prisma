@@ -125,6 +125,8 @@ model Company {
   notifications         Notification[]
   companySequences      CompanySequence[]
   serviceAdditionals    ServiceAdditional[]
+  suppliers             Supplier[]
+  purchaseOrders        PurchaseOrder[]
   attachments           Attachment[]
 }
 
@@ -793,6 +795,7 @@ model ServiceOrder {
   expenses           Expense[]
   payments           Payment[]
   serviceAdditionals ServiceAdditional[]
+  purchaseOrders     PurchaseOrder[]
 
   @@unique([companyId, code])
   @@unique([companyId, quoteId])
@@ -1066,4 +1069,68 @@ model Attachment {
   @@index([companyId])
   @@index([entityType, entityId])
   @@index([createdById])
+}
+
+// ─── ETAPA 10 — Fornecedores e Compras ────────────────────────────────────────
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  RECEIVED
+  CANCELLED
+}
+
+model Supplier {
+  id         String    @id @default(uuid()) @db.Char(36)
+  companyId  String    @db.Char(36)
+  name       String
+  cnpjCpf    String?
+  phone      String?
+  email      String?
+  address    String?   @db.Text
+  notes      String?   @db.Text
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  company    Company   @relation(fields: [companyId], references: [id])
+  purchaseOrders PurchaseOrder[]
+
+  @@index([companyId])
+  @@index([name])
+}
+
+model PurchaseOrder {
+  id            String                 @id @default(uuid()) @db.Char(36)
+  companyId     String                 @db.Char(36)
+  supplierId    String?                @db.Char(36)
+  serviceOrderId String?               @db.Char(36)
+  status        PurchaseOrderStatus    @default(DRAFT)
+  total         Decimal                @default(0) @db.Decimal(15, 2)
+  notes         String?                @db.Text
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  deletedAt     DateTime?
+  company       Company                @relation(fields: [companyId], references: [id])
+  supplier      Supplier?              @relation(fields: [supplierId], references: [id])
+  serviceOrder  ServiceOrder?          @relation(fields: [serviceOrderId], references: [id])
+  items         PurchaseOrderItem[]
+
+  @@index([companyId])
+  @@index([supplierId])
+  @@index([serviceOrderId])
+}
+
+model PurchaseOrderItem {
+  id            String       @id @default(uuid()) @db.Char(36)
+  purchaseOrderId String     @db.Char(36)
+  catalogItemId   String?     @db.Char(36)
+  description     String
+  quantity        Decimal     @db.Decimal(15, 3)
+  unitPrice       Decimal     @default(0) @db.Decimal(15, 2)
+  total           Decimal     @default(0) @db.Decimal(15, 2)
+  createdAt       DateTime    @default(now())
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([catalogItemId])
 }
