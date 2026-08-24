@@ -16,6 +16,7 @@ import { QuotesService } from '../src/modules/quotes/quotes.service';
 describe('QuotesService.versioning (ETAPA 3 V4)', () => {
   let service: QuotesService;
   let prisma: any;
+  let sequenceService: any;
 
   const quoteV1 = {
     id: 'quote-v1',
@@ -96,7 +97,8 @@ describe('QuotesService.versioning (ETAPA 3 V4)', () => {
       },
       $transaction: jest.fn(async (fn: (t: any) => any) => fn(prisma)),
     };
-    service = new QuotesService(prisma);
+    sequenceService = { increment: jest.fn().mockResolvedValue(53) };
+    service = new QuotesService(prisma, sequenceService);
   });
 
   describe('createVersion', () => {
@@ -238,7 +240,6 @@ describe('QuotesService.versioning (ETAPA 3 V4)', () => {
       prisma.quote.findFirst = jest
         .fn()
         .mockResolvedValueOnce(quoteV1) // findOne
-        .mockResolvedValueOnce({ quoteNumber: 52 }); // getNextQuoteNumber
 
       const duplicated = {
         ...quoteV1,
@@ -262,7 +263,6 @@ describe('QuotesService.versioning (ETAPA 3 V4)', () => {
       prisma.quote.findFirst = jest
         .fn()
         .mockResolvedValueOnce(quoteV2Full) // findOne
-        .mockResolvedValueOnce({ quoteNumber: 52 }); // getNextQuoteNumber
 
       const duplicated = {
         ...quoteV2Full,
@@ -283,7 +283,6 @@ describe('QuotesService.versioning (ETAPA 3 V4)', () => {
       prisma.quote.findFirst = jest
         .fn()
         .mockResolvedValueOnce(quoteV1) // findOne
-        .mockResolvedValueOnce({ quoteNumber: 52 }); // getNextQuoteNumber
 
       const duplicated = {
         ...quoteV1,
@@ -310,7 +309,6 @@ describe('QuotesService.versioning (ETAPA 3 V4)', () => {
       prisma.quote.findFirst = jest
         .fn()
         .mockResolvedValueOnce(quoteV1) // findOne
-        .mockResolvedValueOnce({ quoteNumber: 52 }); // getNextQuoteNumber
 
       const duplicated = {
         ...quoteV1,

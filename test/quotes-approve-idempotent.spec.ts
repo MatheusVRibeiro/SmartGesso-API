@@ -9,6 +9,7 @@ describe('QuotesService.approve (idempotente)', () => {
   let service: QuotesService;
   let prisma: any;
   let tx: any;
+  let sequenceService: any;
 
   const quoteBase = {
     id: 'quote-1',
@@ -87,7 +88,8 @@ describe('QuotesService.approve (idempotente)', () => {
 
   beforeEach(() => {
     buildPrismaMock();
-    service = new QuotesService(prisma);
+    sequenceService = { increment: jest.fn().mockResolvedValue(7) };
+    service = new QuotesService(prisma, sequenceService);
   });
 
   it('cria OS na primeira aprovação e retorna serviceOrderCreated=true', async () => {
@@ -134,7 +136,7 @@ describe('QuotesService.approve (idempotente)', () => {
         },
       },
     });
-    service = new QuotesService(prisma);
+    service = new QuotesService(prisma, sequenceService);
 
     // Simular que o orçamento já está APROVADO
     prisma.quote.findFirst.mockResolvedValue({
@@ -160,7 +162,7 @@ describe('QuotesService.approve (idempotente)', () => {
       ...quoteBase,
       status: 'CANCELADO',
     });
-    service = new QuotesService(prisma);
+    service = new QuotesService(prisma, sequenceService);
 
     await expect(service.approve('company-1', 'quote-1')).rejects.toThrow(
       BadRequestException,
