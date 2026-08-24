@@ -1,12 +1,14 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { PrismaModule } from './database/prisma.module';
+import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { ClientsModule } from './modules/clients/clients.module';
@@ -82,10 +84,12 @@ import { ServiceReceivablesModule } from './modules/service-receivables/service-
     SuppliersModule,
     PurchaseOrdersModule,
     ServiceReceivablesModule,
+    AuditLogModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
   ],
 })
 export class AppModule implements NestModule {

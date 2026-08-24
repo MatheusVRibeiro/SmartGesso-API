@@ -349,13 +349,14 @@ model OwnerInvitation {
 model AuditLog {
   id        String   @id @default(uuid()) @db.Char(36)
   companyId String?  @db.Char(36)
-  actorType String
-  actorId   String?
+  userId    String?  @db.Char(36)
   action    String
   entity    String
   entityId  String?
-  metadata  Json?
+  details   Json?
   createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
 }
 
 // ─── Fase 2 — Clientes e Catálogo ──────────────────────────────────────────
