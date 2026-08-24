@@ -8,6 +8,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { CompanySequenceService, SEQUENCE_TYPES } from '../core/services/company-sequence.service';
 import { CreateQuoteDto, QuoteItemDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
+import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination.dto';
+import { paginate } from '../../common/utils/paginate';
 
 const QUOTE_INCLUDE = {
   client: { select: { id: true, name: true } },
@@ -106,7 +108,12 @@ export class QuotesService {
     });
   }
 
-  async findAll(companyId: string, search?: string, status?: QuoteStatus) {
+  async findAll(
+    companyId: string,
+    pagination: PaginationDto,
+    search?: string,
+    status?: QuoteStatus,
+  ): Promise<PaginatedResponseDto<any>> {
     const where: Prisma.QuoteWhereInput = {
       companyId,
       deletedAt: null,
@@ -121,22 +128,23 @@ export class QuotesService {
         : {}),
     };
 
-    const quotes = await this.prisma.quote.findMany({
+    const result = await paginate(
+      this.prisma.quote,
       where,
-      include: {
-        client: { select: { id: true, name: true } },
-        work: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+      pagination,
+      { createdAt: 'desc' },
+    );
 
-    return quotes.map((q) => ({
+    // Convert decimals for all items
+    result.data = result.data.map((q: any) => ({
       ...q,
       subtotal: Number(q.subtotal),
       discount: Number(q.discount),
       marginPct: Number(q.marginPct),
       total: Number(q.total),
     }));
+
+    return result;
   }
 
   async findOne(companyId: string, id: string) {

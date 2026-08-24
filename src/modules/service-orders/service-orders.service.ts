@@ -5,6 +5,8 @@ import { CompanySequenceService, SEQUENCE_TYPES } from '../core/services/company
 import { CreateServiceOrderDto } from './dto/create-service-order.dto';
 import { UpdateServiceOrderDto } from './dto/update-service-order.dto';
 import { RegisterServiceOrderResultDto } from './dto/register-service-order-result.dto';
+import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination.dto';
+import { paginate } from '../../common/utils/paginate';
 
 const SERVICE_ORDER_INCLUDE = {
   client: { select: { id: true, name: true } },
@@ -63,7 +65,12 @@ export class ServiceOrdersService {
     }
   }
 
-  async findAll(companyId: string, search?: string, status?: string) {
+  async findAll(
+    companyId: string,
+    pagination: PaginationDto,
+    search?: string,
+    status?: string,
+  ): Promise<PaginatedResponseDto<any>> {
     const where: Prisma.ServiceOrderWhereInput = {
       companyId,
       deletedAt: null,
@@ -79,13 +86,17 @@ export class ServiceOrdersService {
         : {}),
     };
 
-    const orders = await this.prisma.serviceOrder.findMany({
+    const result = await paginate(
+      this.prisma.serviceOrder,
       where,
-      include: SERVICE_ORDER_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
+      pagination,
+      { createdAt: 'desc' },
+    );
 
-    return orders.map((order) => this.convertDecimals(order));
+    // Convert decimals for all items
+    result.data = result.data.map((order: any) => this.convertDecimals(order));
+
+    return result;
   }
 
   async findOne(companyId: string, id: string) {

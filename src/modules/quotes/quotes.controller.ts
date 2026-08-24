@@ -22,6 +22,7 @@ import { QuotesService } from './quotes.service';
 import { QuotesPdfService } from './quotes-pdf.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
 @ApiTags('quotes')
 @ApiBearerAuth()
@@ -34,13 +35,14 @@ export class QuotesController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Lista orçamentos da empresa' })
+  @ApiOperation({ summary: 'Lista orçamentos da empresa (paginado)' })
   findAll(
     @Req() r: any,
+    @Query() pagination: PaginationDto,
     @Query('search') search?: string,
     @Query('status') status?: QuoteStatus,
   ) {
-    return this.quotesService.findAll(r.company.id, search, status);
+    return this.quotesService.findAll(r.company.id, pagination, search, status);
   }
 
   @Get(':id')

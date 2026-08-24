@@ -18,6 +18,7 @@ import { ServiceOrdersService } from './service-orders.service';
 import { CreateServiceOrderDto } from './dto/create-service-order.dto';
 import { UpdateServiceOrderDto } from './dto/update-service-order.dto';
 import { RegisterServiceOrderResultDto } from './dto/register-service-order-result.dto';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
 @ApiTags('service-orders')
 @ApiBearerAuth()
@@ -27,13 +28,14 @@ export class ServiceOrdersController {
   constructor(private readonly serviceOrdersService: ServiceOrdersService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Lista ordens de serviço da empresa' })
+  @ApiOperation({ summary: 'Lista ordens de serviço da empresa (paginado)' })
   findAll(
     @Req() r: any,
+    @Query() pagination: PaginationDto,
     @Query('search') search?: string,
     @Query('status') status?: string,
   ) {
-    return this.serviceOrdersService.findAll(r.company.id, search, status);
+    return this.serviceOrdersService.findAll(r.company.id, pagination, search, status);
   }
 
   @Get(':id')
