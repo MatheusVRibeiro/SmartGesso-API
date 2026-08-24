@@ -128,6 +128,8 @@ model Company {
   suppliers             Supplier[]
   purchaseOrders        PurchaseOrder[]
   attachments           Attachment[]
+  serviceWarranties     ServiceWarranty[]
+  serviceReturns        ServiceReturn[]
 }
 
 // ─── ETAPA 4 — Numeração concorrente segura ────────────────────────────────
@@ -755,6 +757,20 @@ enum ServiceAdditionalStatus {
   CANCELLED
 }
 
+// ─── ETAPA 11 — Garantia e Retorno de Serviço ────────────────────────────────
+
+enum ServiceWarrantyStatus {
+  ACTIVE
+  EXPIRED
+  CLOSED
+}
+
+enum ServiceReturnStatus {
+  OPEN
+  RESOLVED
+  CLOSED
+}
+
 // ─── Fase 7 — Estoque (movimentos de inventário) ───────────────────────
 
 enum InventoryMovementType {
@@ -796,6 +812,8 @@ model ServiceOrder {
   payments           Payment[]
   serviceAdditionals ServiceAdditional[]
   purchaseOrders     PurchaseOrder[]
+  serviceWarranties  ServiceWarranty[]
+  serviceReturns     ServiceReturn[]
 
   @@unique([companyId, code])
   @@unique([companyId, quoteId])
@@ -841,6 +859,53 @@ model ServiceAdditional {
   createdBy      User?                    @relation("CreatedServiceAdditionals", fields: [createdById], references: [id])
 
   @@index([companyId, serviceOrderId])
+}
+
+// ─── ETAPA 11 — Garantia e Retorno de Serviço ────────────────────────────────
+
+model ServiceWarranty {
+  id             String               @id @default(uuid()) @db.Char(36)
+  companyId      String               @db.Char(36)
+  serviceOrderId String               @db.Char(36)
+  startDate      DateTime
+  endDate        DateTime
+  notes          String?              @db.Text
+  status         ServiceWarrantyStatus @default(ACTIVE)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
+  company        Company              @relation(fields: [companyId], references: [id])
+  serviceOrder   ServiceOrder         @relation(fields: [serviceOrderId], references: [id])
+  returns        ServiceReturn[]
+
+  @@index([companyId, serviceOrderId])
+  @@index([companyId])
+  @@index([serviceOrderId])
+  @@index([status])
+}
+
+model ServiceReturn {
+  id             String               @id @default(uuid()) @db.Char(36)
+  companyId      String               @db.Char(36)
+  serviceOrderId String               @db.Char(36)
+  warrantyId     String?              @db.Char(36)
+  reason         String
+  description    String?              @db.Text
+  status         ServiceReturnStatus  @default(OPEN)
+  resolutionNote String?              @db.Text
+  resolvedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
+  company        Company              @relation(fields: [companyId], references: [id])
+  serviceOrder   ServiceOrder         @relation(fields: [serviceOrderId], references: [id])
+  warranty       ServiceWarranty?     @relation(fields: [warrantyId], references: [id])
+
+  @@index([companyId, serviceOrderId])
+  @@index([companyId])
+  @@index([serviceOrderId])
+  @@index([warrantyId])
+  @@index([status])
 }
 
 model InventoryMovement {
