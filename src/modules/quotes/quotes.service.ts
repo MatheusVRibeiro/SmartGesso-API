@@ -6,6 +6,7 @@ import {
 import { Prisma, QuoteStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CompanySequenceService, SEQUENCE_TYPES } from '../core/services/company-sequence.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateQuoteDto, QuoteItemDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
 import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination.dto';
@@ -47,6 +48,7 @@ export class QuotesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequenceService: CompanySequenceService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async create(companyId: string, dto: CreateQuoteDto) {
@@ -427,7 +429,7 @@ export class QuotesService {
   }
 
   /** Aprova o orçamento: status APROVADO + registro de histórico + criação idempotente de OS. */
-  async approve(companyId: string, id: string) {
+  async approve(companyId: string, id: string, userId?: string) {
     const quote = await this.findOne(companyId, id);
 
     if (quote.status === 'CANCELADO') {
@@ -439,7 +441,7 @@ export class QuotesService {
     // Se já está APROVADO, retorna sem duplicar histórico
     const alreadyApproved = quote.status === 'APROVADO';
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let updated: QuoteWithRelations;
 
       if (!alreadyApproved) {
@@ -473,6 +475,22 @@ export class QuotesService {
         serviceOrderCreated,
       };
     });
+
+    // Log audit event
+    await this.auditLogService.log({
+      companyId,
+      userId,
+      action: 'APPROVE',
+      entity: 'Quote',
+      entityId: id,
+      details: {
+        quoteNumber: result.quote.quoteNumber,
+        status: 'APROVADO',
+        total: result.quote.total,
+      },
+    });
+
+    return result;
   }
 
   /** Rejeita o orçamento: status REJEITADO + registro de histórico. */
