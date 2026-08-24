@@ -7,13 +7,15 @@ import { AttachmentsService } from '../src/modules/attachments/attachments.servi
  * Testes unitários do AttachmentsService — ETAPA 8 V4.
  *
  * PrismaService é mockado — nenhum banco é acessado.
- * O disco é usado de forma controlada (arquivo real criado e removido no afterEach).
+ * StorageProvider é mockado — nenhum disco é acessado no serviço.
+ * O disco é usado de forma controlada (arquivo real criado e removido no afterEach) APENAS para testes de integração/validação.
  *
  * Cobre: CRUD, soft delete, tenant isolation (A não baixa de B) e validações de MIME.
  */
 describe('AttachmentsService', () => {
   let service: AttachmentsService;
   let prisma: any;
+  let storageProvider: any;
 
   const COMPANY_ID = 'company-1';
   const OTHER_COMPANY_ID = 'company-2';
@@ -44,7 +46,13 @@ describe('AttachmentsService', () => {
         update: jest.fn(),
       },
     };
-    service = new AttachmentsService(prisma);
+    storageProvider = {
+      save: jest.fn().mockResolvedValue('mock-storage-path'),
+      get: jest.fn(),
+      exists: jest.fn().mockResolvedValue(true),
+      delete: jest.fn(),
+    };
+    service = new AttachmentsService(prisma, storageProvider);
   });
 
   afterEach(() => {
@@ -78,7 +86,7 @@ describe('AttachmentsService', () => {
   // ── create ─────────────────────────────────────────────
 
   describe('create', () => {
-    it('salva arquivo em ./attachments-storage/<companyId>/<uuid>.<ext> e cria registro Prisma', async () => {
+    it('salva arquivo via StorageProvider e cria registro Prisma', async () => {
       const created = mockAttachment();
       prisma.attachment.create.mockResolvedValue(created);
 
@@ -105,16 +113,15 @@ describe('AttachmentsService', () => {
         }),
       );
 
-      // Verifica que o storagePath aponta para o diretório correto do tenant
-      const storagePath = (prisma.attachment.create.mock.calls[0] as any)[0]
-        .data.storagePath;
-      expect(storagePath).toMatch(
-        new RegExp(`attachments-storage[/\\\\]${COMPANY_ID}[/\\\\]`),
-      );
-      expect(storagePath).toMatch(/\.jpg$/);
+      // Verifica que o storagePath foi passado para o create
+      const callData = (prisma.attachment.create.mock.calls[0] as any)[0].data;
+      expect(callData.storagePath).toBe('mock-storage-path');
 
-      // Verifica que o arquivo foi realmente escrito em disco
-      expect(existsSync(storagePath)).toBe(true);
+      // Verifica que o StorageProvider.save foi chamado corretamente
+      expect(storageProvider.save).toHaveBeenCalledWith(
+        mockFile.buffer,
+        expect.stringContaining(COMPANY_ID),
+      );
 
       expect(result).toEqual(created);
     });
@@ -144,6 +151,7 @@ describe('AttachmentsService', () => {
       await service.create(COMPANY_ID, USER_ID, pdfFile, ENTITY_TYPE, ENTITY_ID);
 
       expect(prisma.attachment.create).toHaveBeenCalled();
+      expect(storageProvider.save).toHaveBeenCalled();
     });
 
     it('aceita image/heic', async () => {
@@ -157,6 +165,7 @@ describe('AttachmentsService', () => {
       await service.create(COMPANY_ID, USER_ID, heicFile, ENTITY_TYPE, ENTITY_ID);
 
       expect(prisma.attachment.create).toHaveBeenCalled();
+      expect(storageProvider.save).toHaveBeenCalled();
     });
 
     it('lança BadRequestException quando entityType ou entityId faltam', async () => {
@@ -170,7 +179,7 @@ describe('AttachmentsService', () => {
     });
   });
 
-  // ── listByEntity ─�──────────────────────────────────────
+  // ── listByEntity ────────────────────────────────────────
 
   describe('listByEntity', () => {
     it('retorna apenas não-deletados da empresa e entidade informada', async () => {
@@ -251,18 +260,13 @@ describe('AttachmentsService', () => {
   describe('getStoragePath', () => {
     it('retorna caminho absoluto quando o registro pertence à empresa', async () => {
       const attachment = mockAttachment();
-      // Cria o arquivo físico para existsSync passar
-      mkdirSync(join(process.cwd(), 'attachments-storage', COMPANY_ID), {
-        recursive: true,
-      });
-      writeFileSync(attachment.storagePath, 'conteudo');
-
       prisma.attachment.findFirst.mockResolvedValue(attachment);
+      storageProvider.exists.mockResolvedValue(true);
 
       const path = await service.getStoragePath(COMPANY_ID, ATTACHMENT_ID);
 
       expect(path).toBe(attachment.storagePath);
-      expect(existsSync(path)).toBe(true);
+      expect(storageProvider.exists).toHaveBeenCalledWith(attachment.storagePath);
     });
 
     it('tenant isolation: empresa A não consegue resolver caminho de empresa B', async () => {
@@ -303,6 +307,7 @@ describe('AttachmentsService', () => {
         ),
       });
       prisma.attachment.findFirst.mockResolvedValue(attachment);
+      storageProvider.exists.mockResolvedValue(false);
 
       await expect(
         service.getStoragePath(COMPANY_ID, ATTACHMENT_ID),

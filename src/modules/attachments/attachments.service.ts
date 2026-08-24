@@ -1,19 +1,13 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaService } from '../../database/prisma.service';
-
-/**
- * Diretório PRIVADO para anexos — NÃO servido estaticamente.
- * Mantém `/uploads` (público) intacto; anexos são servidos apenas via
- * endpoint autorizado `/attachments/:id/download`.
- */
-export const ATTACHMENTS_DIR = join(process.cwd(), 'attachments-storage');
+import { StorageProvider } from './storage-provider';
 
 /** MIME types aceitos: imagens, PDF e documentos comuns. */
 export const ATTACHMENT_ALLOWED_MIME_TYPES = new Set([
@@ -55,7 +49,10 @@ export function sanitizeSubdir(entityType?: string): string {
  */
 @Injectable()
 export class AttachmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject('StorageProvider') private readonly storage: StorageProvider,
+  ) {}
 
   /**
    * Salva o arquivo em disco (diretório privado, isolado por tenant) e
@@ -84,15 +81,16 @@ export class AttachmentsService {
       ? file.originalname.split('.').pop()?.toLowerCase() ?? 'bin'
       : 'bin';
     const filename = `${randomUUID()}.${ext}`;
-    const dir = join(
-      ATTACHMENTS_DIR,
+    
+    // Caminho relativo para o StorageProvider
+    const relativePath = join(
       companyId,
       sanitizeSubdir(entityType),
       entityId,
+      filename,
     );
-    mkdirSync(dir, { recursive: true });
-    const storagePath = join(dir, filename);
-    writeFileSync(storagePath, file.buffer);
+    
+    const storagePath = await this.storage.save(file.buffer, relativePath);
 
     return this.prisma.attachment.create({
       data: {
@@ -152,7 +150,9 @@ export class AttachmentsService {
     if (!attachment) {
       throw new NotFoundException('Anexo não encontrado');
     }
-    if (!existsSync(attachment.storagePath)) {
+    
+    const exists = await this.storage.exists(attachment.storagePath);
+    if (!exists) {
       throw new NotFoundException('Arquivo físico não encontrado');
     }
     return attachment.storagePath;
