@@ -23,6 +23,7 @@ import { PlatformCompaniesModule } from './modules/platform-companies/platform-c
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { WorksModule } from './modules/works/works.module';
 import { QuotesModule } from './modules/quotes/quotes.module';
+import { QuoteEnvironmentsModule } from './modules/quote-environments/quote-environments.module';
 import { ProductionOrdersModule } from './modules/production-orders/production-orders.module';
 import { ServiceOrdersModule } from './modules/service-orders/service-orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -59,6 +60,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
         MeasurementsModule,
         CompositionsModule,
         QuotesModule,
+        QuoteEnvironmentsModule,
         ProductionOrdersModule,
         ServiceOrdersModule,
         PaymentsModule,

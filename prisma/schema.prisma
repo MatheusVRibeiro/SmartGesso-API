@@ -114,6 +114,7 @@ model Company {
   measurements          Measurement[]
   compositions          Composition[]
   quotes                Quote[]
+  quoteEnvironments     QuoteEnvironment[]
   payments              Payment[]
   expenses              Expense[]
   serviceOrders         ServiceOrder[]
@@ -122,6 +123,26 @@ model Company {
   inventoryMovements    InventoryMovement[]
   pushTokens            PushToken[]
   notifications         Notification[]
+  companySequences      CompanySequence[]
+}
+
+// ─── ETAPA 4 — Numeração concorrente segura ────────────────────────────────
+
+enum SequenceEntityType {
+  QUOTE
+  SERVICE_ORDER
+}
+
+model CompanySequence {
+  companyId    String              @db.Char(36)
+  entityType   SequenceEntityType
+  currentValue Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  company      Company             @relation(fields: [companyId], references: [id])
+
+  @@id([companyId, entityType])
+  @@index([companyId])
 }
 
 model CompanyAddress {
@@ -470,31 +491,54 @@ enum MeasurementApplicationType {
 }
 
 model Measurement {
-  id              String                     @id @default(uuid()) @db.Char(36)
-  companyId       String                     @db.Char(36)
-  workId          String                     @db.Char(36)
-  environmentName String
-  applicationType MeasurementApplicationType @default(DRYWALL)
-  length          Decimal?                   @db.Decimal(15, 2)
-  width           Decimal?                   @db.Decimal(15, 2)
-  ceilingHeight   Decimal?                   @db.Decimal(15, 2)
-  area            Decimal?                   @db.Decimal(15, 2)
-  perimeter       Decimal?                   @db.Decimal(15, 2)
-  doors           Int                        @default(0)
-  windows         Int                        @default(0)
-  cutouts         Int                        @default(0)
-  fixtures        Int                        @default(0)
-  hasCove         Boolean                    @default(false)
-  hasDropCeiling  Boolean                    @default(false)
-  observations    String?                    @db.Text
-  createdAt       DateTime                   @default(now())
-  updatedAt       DateTime                   @updatedAt
-  deletedAt       DateTime?
-  company         Company                    @relation(fields: [companyId], references: [id])
-  work            Work                       @relation(fields: [workId], references: [id])
+  id                   String                     @id @default(uuid()) @db.Char(36)
+  companyId            String                     @db.Char(36)
+  workId               String?                    @db.Char(36)
+  quoteEnvironmentId   String?                    @db.Char(36)
+  environmentName      String
+  applicationType      MeasurementApplicationType @default(DRYWALL)
+  length               Decimal?                   @db.Decimal(15, 2)
+  width                Decimal?                   @db.Decimal(15, 2)
+  ceilingHeight        Decimal?                   @db.Decimal(15, 2)
+  area                 Decimal?                   @db.Decimal(15, 2)
+  perimeter            Decimal?                   @db.Decimal(15, 2)
+  doors                Int                        @default(0)
+  windows              Int                        @default(0)
+  cutouts              Int                        @default(0)
+  fixtures             Int                        @default(0)
+  hasCove              Boolean                    @default(false)
+  hasDropCeiling       Boolean                    @default(false)
+  observations         String?                    @db.Text
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  deletedAt            DateTime?
+  company              Company                    @relation(fields: [companyId], references: [id])
+  work                 Work?                      @relation(fields: [workId], references: [id])
+  quoteEnvironment     QuoteEnvironment?          @relation(fields: [quoteEnvironmentId], references: [id])
 
   @@index([companyId])
   @@index([workId])
+  @@index([quoteEnvironmentId])
+}
+
+// ─── ETAPA 6 — Ambientes de orçamento (sem Work obrigatório) ──────────────────
+
+model QuoteEnvironment {
+  id                String        @id @default(uuid()) @db.Char(36)
+  companyId         String        @db.Char(36)
+  quoteId           String        @db.Char(36)
+  name              String
+  description       String?       @db.Text
+  order             Int           @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
+  company           Company       @relation(fields: [companyId], references: [id])
+  quote             Quote         @relation(fields: [quoteId], references: [id])
+  measurements      Measurement[]
+
+  @@index([companyId])
+  @@index([quoteId])
 }
 
 enum CompositionStatus {
@@ -599,6 +643,7 @@ model Quote {
   history         QuoteHistory[]
   scheduleEvents  ScheduleEvent[]
   serviceOrders   ServiceOrder[]
+  environments    QuoteEnvironment[]
 
   @@unique([companyId, quoteNumber, version])
   @@index([companyId])

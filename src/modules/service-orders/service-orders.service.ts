@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { CompanySequenceService, SEQUENCE_TYPES } from '../core/services/company-sequence.service';
 import { CreateServiceOrderDto } from './dto/create-service-order.dto';
 import { UpdateServiceOrderDto } from './dto/update-service-order.dto';
 import { RegisterServiceOrderResultDto } from './dto/register-service-order-result.dto';
@@ -13,7 +14,10 @@ const SERVICE_ORDER_INCLUDE = {
 
 @Injectable()
 export class ServiceOrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sequenceService: CompanySequenceService,
+  ) {}
 
   async create(companyId: string, dto: CreateServiceOrderDto) {
     try {
@@ -212,12 +216,7 @@ export class ServiceOrdersService {
   }
 
   private async generateCode(companyId: string): Promise<number> {
-    const lastOrder = await this.prisma.serviceOrder.findFirst({
-      where: { companyId },
-      orderBy: { code: 'desc' },
-      select: { code: true },
-    });
-    return (lastOrder?.code ?? 0) + 1;
+    return this.sequenceService.increment(companyId, SEQUENCE_TYPES.SERVICE_ORDER);
   }
 
   private async ensureClientBelongsToCompany(companyId: string, clientId: string) {

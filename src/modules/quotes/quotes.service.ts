@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, QuoteStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { CompanySequenceService, SEQUENCE_TYPES } from '../core/services/company-sequence.service';
 import { CreateQuoteDto, QuoteItemDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
 
@@ -41,7 +42,10 @@ function parseDateInput(value?: string | null): Date | undefined {
 
 @Injectable()
 export class QuotesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sequenceService: CompanySequenceService,
+  ) {}
 
   async create(companyId: string, dto: CreateQuoteDto) {
     await this.ensureClientBelongsToCompany(companyId, dto.clientId);
@@ -382,13 +386,12 @@ export class QuotesService {
       return { serviceOrder: existingOrder, created: false };
     }
 
-    // 2. Gerar código sequencial (race condition será corrigida na Etapa 4)
-    const lastOrder = await tx.serviceOrder.findFirst({
-      where: { companyId },
-      orderBy: { code: 'desc' },
-      select: { code: true },
-    });
-    const code = (lastOrder?.code ?? 0) + 1;
+    // 2. Gerar código sequencial atomicamente (Etapa 4 — numeração concorrente segura)
+    const code = await this.sequenceService.increment(
+      companyId,
+      SEQUENCE_TYPES.SERVICE_ORDER,
+      tx,
+    );
 
     // 3. Criar a ServiceOrder
     const serviceOrder = await tx.serviceOrder.create({
@@ -621,12 +624,7 @@ export class QuotesService {
   }
 
   private async getNextQuoteNumber(companyId: string): Promise<number> {
-    const lastQuote = await this.prisma.quote.findFirst({
-      where: { companyId },
-      orderBy: { quoteNumber: 'desc' },
-      select: { quoteNumber: true },
-    });
-    return (lastQuote?.quoteNumber ?? 0) + 1;
+    return this.sequenceService.increment(companyId, SEQUENCE_TYPES.QUOTE);
   }
 
   private convertDecimals(quote: QuoteWithRelations) {

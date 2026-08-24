@@ -9,11 +9,11 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompositionsService } from './compositions.service';
-import { CalculateMaterialsDto } from './dto/calculate-materials.dto';
+import { CalculateFromQuoteDto, CalculateMaterialsDto } from './dto';
 import { CreateCompositionDto } from './dto/create-composition.dto';
 import { UpdateCompositionDto } from './dto/update-composition.dto';
 
@@ -37,6 +37,16 @@ export class CompositionsController {
   @Post('calculate')
   calculate(@Req() r: any, @Body() dto: CalculateMaterialsDto) {
     return this.compositionsService.calculate(r.company.id, dto);
+  }
+
+  @Post('calculate-from-quote')
+  @ApiOperation({
+    summary: 'Calcula materiais a partir das medições dos ambientes de um orçamento',
+    description:
+      'Busca todas as medições armazenadas nos ambientes (QuoteEnvironment) do orçamento informado e calcula os materiais da composição ativa — sem depender de Work.',
+  })
+  calculateFromQuote(@Req() r: any, @Body() dto: CalculateFromQuoteDto) {
+    return this.compositionsService.calculateFromQuote(r.company.id, dto);
   }
 
   @Get(':id')
