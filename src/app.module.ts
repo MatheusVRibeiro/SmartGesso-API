@@ -28,6 +28,7 @@ import { ProductionOrdersModule } from './modules/production-orders/production-o
 import { ServiceOrdersModule } from './modules/service-orders/service-orders.module';
 import { ServiceAdditionalsModule } from './modules/service-additionals/service-additionals.module';
 import { ServiceWarrantiesModule } from './modules/service-warranties/service-warranties.module';
+import { QuoteFollowUpsModule } from './modules/quote-follow-ups/quote-follow-ups.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 // Alias para não colidir com o ScheduleModule do @nestjs/schedule (cron)
 import { ScheduleModule as ScheduleEventsModule } from './modules/schedule/schedule.module';
@@ -70,6 +71,7 @@ import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.
     ServiceOrdersModule,
     ServiceAdditionalsModule,
     ServiceWarrantiesModule,
+    QuoteFollowUpsModule,
     PaymentsModule,
     ScheduleEventsModule,
     InventoryModule,

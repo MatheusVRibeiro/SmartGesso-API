@@ -130,6 +130,8 @@ model Company {
   attachments           Attachment[]
   serviceWarranties     ServiceWarranty[]
   serviceReturns        ServiceReturn[]
+  quoteFollowUps        QuoteFollowUp[]
+  featureOverrides      CompanyFeatureOverride[]
 }
 
 // ─── ETAPA 4 — Numeração concorrente segura ────────────────────────────────
@@ -293,7 +295,9 @@ model User {
   members         CompanyMember[]
   pushTokens      PushToken[]
   createdServiceAdditionals ServiceAdditional[] @relation("CreatedServiceAdditionals")
-  attachments     Attachment[]
+  createdQuoteFollowUps     QuoteFollowUp[]     @relation("CreatedQuoteFollowUps")
+  attachments               Attachment[]
+  updatedFeatureOverrides   CompanyFeatureOverride[] @relation("UpdatedCompanyFeatureOverrides")
 }
 
 model CompanyMember {
@@ -653,6 +657,7 @@ model Quote {
   scheduleEvents  ScheduleEvent[]
   serviceOrders   ServiceOrder[]
   environments    QuoteEnvironment[]
+  quoteFollowUps  QuoteFollowUp[]
 
   @@unique([companyId, quoteNumber, version])
   @@index([companyId])
@@ -1198,4 +1203,62 @@ model PurchaseOrderItem {
 
   @@index([purchaseOrderId])
   @@index([catalogItemId])
+}
+
+// ─── ETAPA 12 — Follow-up Comercial de Orçamentos ──────────────────────────────
+
+enum QuoteFollowUpType {
+  CALL
+  WHATSAPP
+  EMAIL
+  OTHER
+}
+
+enum QuoteFollowUpStatus {
+  PENDING
+  DONE
+  CANCELLED
+}
+
+model QuoteFollowUp {
+  id          String              @id @default(uuid()) @db.Char(36)
+  companyId   String              @db.Char(36)
+  quoteId     String              @db.Char(36)
+  type        QuoteFollowUpType
+  notes       String?             @db.Text
+  scheduledAt DateTime?
+  doneAt      DateTime?
+  status      QuoteFollowUpStatus @default(PENDING)
+  createdById String?             @db.Char(36)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  deletedAt   DateTime?
+
+  company     Company             @relation(fields: [companyId], references: [id])
+  quote       Quote               @relation(fields: [quoteId], references: [id])
+  createdBy   User?               @relation("CreatedQuoteFollowUps", fields: [createdById], references: [id])
+
+  @@index([companyId, quoteId])
+  @@index([companyId])
+  @@index([quoteId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+// ─── ETAPA 13 — Feature flags por empresa ────────────────────────────────────
+
+model CompanyFeatureOverride {
+  id          String   @id @default(uuid()) @db.Char(36)
+  companyId   String   @db.Char(36)
+  feature     String
+  enabled     Boolean  @default(true)
+  updatedById String?  @db.Char(36)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id])
+  updatedBy   User?    @relation("UpdatedCompanyFeatureOverrides", fields: [updatedById], references: [id])
+
+  @@unique([companyId, feature])
+  @@index([companyId])
 }
