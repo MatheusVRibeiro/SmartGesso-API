@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -13,7 +13,7 @@ import { PrismaService } from '../../database/prisma.service';
  * Mantém `/uploads` (público) intacto; anexos são servidos apenas via
  * endpoint autorizado `/attachments/:id/download`.
  */
-export const ATTACHMENTS_DIR = join(process.cwd(), 'private-attachments');
+export const ATTACHMENTS_DIR = join(process.cwd(), 'attachments-storage');
 
 /** MIME types aceitos: imagens, PDF e documentos comuns. */
 export const ATTACHMENT_ALLOWED_MIME_TYPES = new Set([
@@ -24,11 +24,11 @@ export const ATTACHMENT_ALLOWED_MIME_TYPES = new Set([
   'image/gif',
   'image/bmp',
   'image/tiff',
+  'image/heic',
+  'image/heif',
   // PDF
   'application/pdf',
   // Documentos
-  'text/plain',
-  'text/csv',
   'application/rtf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -68,6 +68,12 @@ export class AttachmentsService {
     entityType: string,
     entityId: string,
   ) {
+    if (!file || !file.mimetype) {
+      throw new BadRequestException('Arquivo não enviado (campo `file`)');
+    }
+    if (!entityType || !entityId) {
+      throw new BadRequestException('entityType e entityId são obrigatórios');
+    }
     if (!ATTACHMENT_ALLOWED_MIME_TYPES.has(file.mimetype)) {
       throw new BadRequestException(
         `Tipo de arquivo não permitido: ${file.mimetype}.`,
