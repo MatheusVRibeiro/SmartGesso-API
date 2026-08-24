@@ -124,6 +124,8 @@ model Company {
   pushTokens            PushToken[]
   notifications         Notification[]
   companySequences      CompanySequence[]
+  serviceAdditionals    ServiceAdditional[]
+  attachments           Attachment[]
 }
 
 // ─── ETAPA 4 — Numeração concorrente segura ────────────────────────────────
@@ -131,6 +133,7 @@ model Company {
 enum SequenceEntityType {
   QUOTE
   SERVICE_ORDER
+  SERVICE_ADDITIONAL
 }
 
 model CompanySequence {
@@ -285,6 +288,8 @@ model User {
   deletedAt       DateTime?
   members         CompanyMember[]
   pushTokens      PushToken[]
+  createdServiceAdditionals ServiceAdditional[] @relation("CreatedServiceAdditionals")
+  attachments     Attachment[]
 }
 
 model CompanyMember {
@@ -738,6 +743,16 @@ enum ServiceOrderStatus {
   CANCELADA
 }
 
+// ─── ETAPA 9 — Aditivos de Serviço ──────────────────────────────────────────
+
+enum ServiceAdditionalStatus {
+  DRAFT
+  SENT
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 // ─── Fase 7 — Estoque (movimentos de inventário) ───────────────────────
 
 enum InventoryMovementType {
@@ -777,6 +792,7 @@ model ServiceOrder {
   inventoryMovements InventoryMovement[]
   expenses           Expense[]
   payments           Payment[]
+  serviceAdditionals ServiceAdditional[]
 
   @@unique([companyId, code])
   @@unique([companyId, quoteId])
@@ -797,6 +813,31 @@ model ServiceOrderMaterial {
   serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id])
 
   @@index([serviceOrderId])
+}
+
+// ─── ETAPA 9 — Aditivos de Serviço ──────────────────────────────────────────
+
+model ServiceAdditional {
+  id             String                   @id @default(uuid()) @db.Char(36)
+  companyId      String                   @db.Char(36)
+  serviceOrderId String                   @db.Char(36)
+  code           Int
+  description    String
+  amount         Decimal                  @db.Decimal(15, 2)
+  estimatedCost  Decimal?                 @db.Decimal(15, 2)
+  status         ServiceAdditionalStatus  @default(DRAFT)
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  notes          String?                  @db.Text
+  createdById    String?                  @db.Char(36)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  deletedAt      DateTime?
+  company        Company                  @relation(fields: [companyId], references: [id])
+  serviceOrder   ServiceOrder             @relation(fields: [serviceOrderId], references: [id])
+  createdBy      User?                    @relation("CreatedServiceAdditionals", fields: [createdById], references: [id])
+
+  @@index([companyId, serviceOrderId])
 }
 
 model InventoryMovement {
@@ -1002,4 +1043,27 @@ model Notification {
 
   @@index([companyId])
   @@index([createdAt])
+}
+
+// ─── ETAPA 8 — Attachments privados com autorização ──────────────────────────
+
+model Attachment {
+  id          String   @id @default(uuid()) @db.Char(36)
+  companyId   String   @db.Char(36)
+  entityType  String   @db.VarChar(64)
+  entityId    String   @db.VarChar(64)
+  originalName String  @db.VarChar(255)
+  storagePath String   @db.VarChar(512)
+  mimeType    String   @db.VarChar(128)
+  size        Int
+  createdById String   @db.Char(36)
+  createdAt   DateTime @default(now())
+  deletedAt   DateTime?
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([companyId])
+  @@index([entityType, entityId])
+  @@index([createdById])
 }

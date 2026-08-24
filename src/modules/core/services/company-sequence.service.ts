@@ -12,6 +12,7 @@ import { PrismaService } from '../../../database/prisma.service';
 export const SEQUENCE_TYPES = {
   QUOTE: 'QUOTE',
   SERVICE_ORDER: 'SERVICE_ORDER',
+  SERVICE_ADDITIONAL: 'SERVICE_ADDITIONAL',
 } as const;
 
 export type SequenceType = (typeof SEQUENCE_TYPES)[keyof typeof SEQUENCE_TYPES];

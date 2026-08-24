@@ -21,6 +21,7 @@ describe('ServiceOrdersService.getFinancialSummary', () => {
       payment: { aggregate: jest.fn() },
       paymentInstallment: { aggregate: jest.fn() },
       expense: { aggregate: jest.fn() },
+      serviceAdditional: { aggregate: jest.fn() },
     };
     service = new ServiceOrdersService(prisma, {} as any);
   });
@@ -52,16 +53,24 @@ describe('ServiceOrdersService.getFinancialSummary', () => {
     prisma.expense.aggregate.mockResolvedValue({ _sum: { amount: sum } });
   }
 
+  function mockAdditionalApproved(sum: number) {
+    prisma.serviceAdditional.aggregate.mockResolvedValue({
+      _sum: { amount: sum },
+    });
+  }
+
   function mockAll(opts: {
     order?: Record<string, any>;
     directPayments?: number;
     installmentPayments?: number;
     expenses?: number;
+    additionalApproved?: number;
   } = {}) {
     mockServiceOrder(opts.order);
     mockDirectPayments(opts.directPayments ?? 0);
     mockInstallmentPayments(opts.installmentPayments ?? 0);
     mockExpenses(opts.expenses ?? 0);
+    mockAdditionalApproved(opts.additionalApproved ?? 0);
   }
 
   // ── Testes ───────────────────────────────────────────────
@@ -175,10 +184,37 @@ describe('ServiceOrdersService.getFinancialSummary', () => {
     expect(result.contractedValue).toBe(0);
   });
 
-  it('additionalApproved é 0 (preparado para Aditivos futuros)', async () => {
+  it('additionalApproved soma apenas aditivos APPROVED (placeholder sem aditivos = 0)', async () => {
     mockAll();
     const result = await service.getFinancialSummary(COMPANY_ID, SERVICE_ORDER_ID);
     expect(result.additionalApproved).toBe(0);
+  });
+
+  it('additionalApproved reflete a soma de aditivos APPROVED', async () => {
+    // OS: saleValue=1000, aditivos aprovados=250
+    // totalContracted = 1000 + 250 = 1250
+    mockAll({ order: { saleValue: 1000, cost: 400 }, additionalApproved: 250 });
+    const result = await service.getFinancialSummary(COMPANY_ID, SERVICE_ORDER_ID);
+
+    expect(result.additionalApproved).toBe(250);
+    expect(result.totalContracted).toBe(1250);
+  });
+
+  it('verifica que a query de aditivos filtra por status APPROVED e companyId (tenant)', async () => {
+    mockAll();
+
+    await service.getFinancialSummary(COMPANY_ID, SERVICE_ORDER_ID);
+
+    expect(prisma.serviceAdditional.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          serviceOrderId: SERVICE_ORDER_ID,
+          companyId: COMPANY_ID,
+          status: 'APPROVED',
+          deletedAt: null,
+        }),
+      }),
+    );
   });
 
   it('NÃO usa profit do schema como input confiável', async () => {

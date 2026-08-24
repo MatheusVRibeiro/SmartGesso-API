@@ -152,6 +152,9 @@ export class AttachmentsService {
     if (!attachment) {
       throw new NotFoundException('Anexo não encontrado');
     }
+    if (!existsSync(attachment.storagePath)) {
+      throw new NotFoundException('Arquivo físico não encontrado');
+    }
     return attachment.storagePath;
   }
 

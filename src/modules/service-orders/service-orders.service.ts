@@ -231,8 +231,18 @@ export class ServiceOrdersService {
           ? Number(order.quote.total)
           : 0;
 
-    // 2. additionalApproved: 0 por enquanto (placeholder para Aditivos)
-    const additionalApproved = 0;
+    // 2. additionalApproved: soma de aditivos APPROVED desta OS (ETAPA 9).
+    //    Apenas aditivos aprovados entram no total contratado — DRAFT/SENT/REJECTED/CANCELLED são ignorados.
+    const additionalSum = await this.prisma.serviceAdditional.aggregate({
+      where: {
+        serviceOrderId: id,
+        companyId,
+        status: 'APPROVED',
+        deletedAt: null,
+      },
+      _sum: { amount: true },
+    });
+    const additionalApproved = Number(additionalSum._sum.amount ?? 0);
 
     // 3. totalContracted
     const totalContracted = contractedValue + additionalApproved;
