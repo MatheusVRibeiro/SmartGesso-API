@@ -26,6 +26,7 @@ import { QuotesModule } from './modules/quotes/quotes.module';
 import { QuoteEnvironmentsModule } from './modules/quote-environments/quote-environments.module';
 import { ProductionOrdersModule } from './modules/production-orders/production-orders.module';
 import { ServiceOrdersModule } from './modules/service-orders/service-orders.module';
+import { ServiceAdditionalsModule } from './modules/service-additionals/service-additionals.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 // Alias para não colidir com o ScheduleModule do @nestjs/schedule (cron)
 import { ScheduleModule as ScheduleEventsModule } from './modules/schedule/schedule.module';
@@ -34,6 +35,7 @@ import { CompanyMembersModule } from './modules/company-members/company-members.
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { AttachmentsModule } from './modules/attachments/attachments.module';
 
 @Module({
   imports: [
@@ -63,11 +65,13 @@ import { UploadsModule } from './modules/uploads/uploads.module';
         QuoteEnvironmentsModule,
         ProductionOrdersModule,
         ServiceOrdersModule,
+        ServiceAdditionalsModule,
         PaymentsModule,
         ScheduleEventsModule,
                 InventoryModule,
                 NotificationsModule,
                 UploadsModule,
+                AttachmentsModule,
               ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
