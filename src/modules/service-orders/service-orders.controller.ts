@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { ServiceOrdersService } from './service-orders.service';
 import { CreateServiceOrderDto } from './dto/create-service-order.dto';
 import { UpdateServiceOrderDto } from './dto/update-service-order.dto';
@@ -20,7 +21,7 @@ import { RegisterServiceOrderResultDto } from './dto/register-service-order-resu
 
 @ApiTags('service-orders')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
 @Controller('service-orders')
 export class ServiceOrdersController {
   constructor(private readonly serviceOrdersService: ServiceOrdersService) {}

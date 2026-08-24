@@ -11,6 +11,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { InventoryMovementType } from '@prisma/client';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { AdjustMaterialStockDto } from './dto/adjust-material-stock.dto';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
@@ -18,7 +19,7 @@ import { InventoryService } from './inventory.service';
 
 @ApiTags('inventory')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventory: InventoryService) {}

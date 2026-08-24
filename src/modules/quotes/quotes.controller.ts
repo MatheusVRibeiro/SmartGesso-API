@@ -17,6 +17,7 @@ import { QuoteStatus } from '@prisma/client';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { QuotesService } from './quotes.service';
 import { QuotesPdfService } from './quotes-pdf.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
@@ -24,7 +25,7 @@ import { UpdateQuoteDto } from './dto/update-quote.dto';
 
 @ApiTags('quotes')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
 @Controller('quotes')
 export class QuotesController {
   constructor(
