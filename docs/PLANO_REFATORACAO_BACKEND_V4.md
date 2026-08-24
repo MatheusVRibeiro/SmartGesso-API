@@ -1,102 +1,104 @@
 # SmartGesso API — Plano de Refatoração e Evolução do Backend V4
 
-> **Documento de execução técnica**  
+> **Documento de execução técnica para Hermes / implementação incremental**  
 > Repositório: `SmartGesso-API`  
 > Data-base da auditoria: 24/08/2026  
-> Stack atual: NestJS 11 + Prisma + MySQL + JWT/Argon2  
+> Stack atual: NestJS 11 + Prisma + MySQL + JWT + Argon2  
 > Documento complementar: `SmartGesso-Mobile/docs/PLANO_REFATORACAO_FRONTEND_V4.md`
 
 ---
 
-## 1. Objetivo deste documento
+# 1. Objetivo deste documento
 
-Este documento transforma a auditoria do backend em um plano de implementação executável, dividido em etapas e subetapas. O foco não é reescrever o projeto, e sim **preservar a base técnica atual e corrigir inconsistências de domínio, integridade, segurança, rastreabilidade e manutenção**.
+Este documento é a **especificação autoritativa de refatoração do backend**. Ele não deve ser executado inteiro de uma vez.
 
-A direção de produto adotada neste plano é:
+A regra de execução é:
+
+```text
+1 etapa
+  ↓
+1 /goal no Hermes
+  ↓
+implementar
+  ↓
+testar
+  ↓
+revisar diff
+  ↓
+commit/PR
+  ↓
+só então iniciar a próxima etapa
+```
+
+A direção de produto é:
 
 ```text
 Cliente
   ↓
 Orçamento
   ↓ aprovado
-Serviço / Ordem de Serviço
+Serviço
   ↓
-Execução + Compras + Estoque + Despesas + Recebimentos
+Execução + Materiais + Compras + Despesas + Recebimentos
   ↓
 Resultado
   ↓
 Garantia / Retorno
 ```
 
-Princípios obrigatórios:
+Princípios obrigatórios em todas as etapas:
 
-1. O `companyId` nunca deve ser confiado a partir do body do cliente.
-2. Toda operação de negócio deve respeitar o tenant ativo.
-3. Orçamento aprovado deve gerar **no máximo um serviço**.
-4. Alterações compostas devem ser transacionais.
-5. Valores financeiros devem ser rastreáveis até sua origem.
-6. `profit` não deve ser uma verdade manual desconectada das receitas/despesas.
-7. Nenhum arquivo privado de cliente deve ficar publicamente acessível por URL estática sem autorização.
-8. Migrações de domínio devem ser progressivas e compatíveis; não remover tabelas/colunas antigas antes do backfill e da migração do mobile.
-9. Funcionalidades opcionais, como Produção, devem ser habilitadas por capacidade/plano/empresa.
-10. Cada etapa deve terminar com lint, typecheck, testes e build verdes.
-
----
-
-# 2. Diagnóstico resumido do estado atual
-
-## 2.1 Pontos fortes a preservar
-
-- NestJS organizado por módulos de domínio.
-- Prisma com MySQL e uso de `Decimal` no schema.
-- Estrutura multiempresa com `Company`, `CompanyMember` e empresa ativa.
-- JWT separado para usuário e administrador de plataforma.
-- Refresh tokens persistidos como hash.
-- Rotação/revogação de sessão.
-- Guards de autenticação, empresa ativa e permissões já iniciados.
-- Soft delete em várias entidades.
-- Histórico de status de orçamento.
-- Geração de PDF de orçamento.
-- Rate limiting, Helmet, CORS allowlist e ValidationPipe global.
-- Testes de conversão de orçamento em serviço já existentes.
-
-## 2.2 Problemas prioritários identificados
-
-### P0 — integridade/fluxo
-
-- `approve()` já cria uma `ServiceOrder`, porém existe também `convertToService()`. O mobile chama os dois fluxos e pode receber `409` após aprovação.
-- `QuoteService.update()` apaga itens fora da transação; uma falha posterior pode deixar o orçamento sem itens.
-- `ServiceOrdersService.update()` possui risco equivalente ao substituir materiais.
-- `createVersion()` gera novo `quoteNumber`, embora uma nova versão deva manter o mesmo número.
-- Numerações usam padrão `buscar último + 1`, sujeito a corrida entre usuários simultâneos.
-- O fluxo permite criar OS manualmente mesmo quando a regra principal deveria ser orçamento aprovado → serviço.
-
-### P1 — segurança e contrato
-
-- `CompanyAccessGuard` não está aplicado de forma consistente em todos os módulos operacionais.
-- `PermissionsGuard` e `@RequirePermissions()` também não estão sistematicamente aplicados.
-- A API usa `402` para suspensão de assinatura, enquanto o mobile trata especialmente `403`; o contrato precisa ser padronizado por `code`.
-- Upload autenticado é salvo em filesystem e depois servido publicamente por `/uploads`.
-
-### P1 — domínio
-
-- `Work`/"Obra" continua sendo entidade central para medições e aparece no orçamento, embora o fluxo simplificado precise ser Cliente → Orçamento → Serviço.
-- Recebimentos podem referenciar orçamento, mas não serviço.
-- Despesas não possuem vínculo com serviço.
-- `ServiceOrder.cost`, `saleValue` e `profit` podem divergir dos lançamentos reais.
-
-### P2 — manutenção e evolução
-
-- `BusinessService` centraliza operações que hoje também existem em módulos específicos, criando sobreposição.
-- Falta um mecanismo de capacidades/feature flags por empresa.
-- Faltam domínios de Aditivos, Fornecedores/Compras e Garantia/Retorno.
-- A cobertura de testes ainda é pequena para fluxos multi-tenant e financeiros.
+1. `companyId` vem do contexto autenticado; nunca confiar em `companyId` enviado pelo cliente.
+2. Toda entidade de negócio deve respeitar isolamento multiempresa.
+3. Orçamento aprovado gera **no máximo um Serviço**.
+4. Alterações compostas precisam ser atômicas quando uma falha parcial puder corromper o estado.
+5. `Work/Obra` será removido do fluxo principal de forma progressiva, não apagado abruptamente.
+6. Dinheiro deve possuir semântica clara e rastreável.
+7. O backend é a fonte da verdade para autorização, regras de negócio e cálculos financeiros.
+8. Arquivos privados não podem depender de URL pública estática.
+9. Mudanças breaking devem possuir estratégia de compatibilidade com o Mobile.
+10. Não iniciar uma etapa seguinte automaticamente.
 
 ---
 
-# 3. Arquitetura de domínio alvo
+# 2. Diagnóstico atual — o que preservar e o que corrigir
 
-A arquitetura recomendada preserva `ServiceOrder` internamente para evitar conflito com o model `Service` do catálogo.
+## 2.1 Preservar
+
+- NestJS modular.
+- Prisma + MySQL.
+- `Company`, `CompanyMember` e contexto de empresa ativa.
+- JWT de access e refresh separados.
+- refresh token persistido como hash.
+- rotação/revogação de sessão.
+- `ActiveCompanyGuard`, `CompanyAccessGuard`, `PermissionsGuard` e `PlatformAdminGuard`.
+- soft delete onde já faz sentido.
+- histórico do orçamento.
+- PDF de orçamento.
+- Helmet, CORS allowlist, ValidationPipe e rate limiting.
+- React Native consumindo API versionada.
+
+## 2.2 Problemas P0 identificados
+
+1. `approve()` e `convertToService()` possuem responsabilidades sobrepostas.
+2. substituição de itens/materiais executa deleções fora de transaction.
+3. `createVersion()` altera `quoteNumber` quando deveria manter o mesmo número.
+4. sequências usam “último + 1” e podem colidir em concorrência.
+5. criação manual de Serviço conflita com o fluxo principal de negócio.
+
+## 2.3 Problemas P1
+
+1. guards de assinatura/permissões não estão aplicados de forma consistente.
+2. API e Mobile divergem sobre `402/403` para empresa suspensa.
+3. `Work` continua central no fluxo de medição/orçamento.
+4. `Expense` não pertence a Serviço.
+5. `Payment` não possui vínculo principal com Serviço.
+6. `ServiceOrder.cost/profit` pode divergir do financeiro real.
+7. uploads autenticados tornam-se públicos após gravação.
+
+---
+
+# 3. Arquitetura alvo de domínio
 
 ```text
 Company
@@ -104,449 +106,654 @@ Company
  ├── Client
  │    └── Quote
  │         ├── QuoteEnvironment
- │         │    └── Measurement
+ │         │    ├── Measurement
+ │         │    └── Attachment
  │         ├── QuoteItem
  │         ├── QuoteHistory
- │         └── ServiceOrder (apenas após aprovação)
+ │         ├── QuoteFollowUp
+ │         └── ServiceOrder
  │              ├── ServiceOrderMaterial
  │              ├── InventoryMovement
- │              ├── ServiceAdditional
  │              ├── Expense
- │              ├── Receivable / Payment
+ │              ├── Receivable
+ │              │    ├── ReceivableInstallment
+ │              │    └── Receipt
+ │              ├── ServiceAdditional
  │              ├── Attachment
  │              ├── Purchase
  │              └── WarrantyReturn
  ├── Supplier
  ├── Material
- ├── ProductionOrder (feature opcional)
+ ├── ProductionOrder (opcional)
  └── ScheduleEvent
 ```
 
-`Work` deve entrar em **depreciação progressiva**, não em remoção abrupta.
+`ServiceOrder` continua sendo o nome técnico interno para evitar conflito com `Service` do catálogo. Na UX, o nome deve ser **Serviço**.
 
 ---
 
-# 4. Matriz de prioridade
+# 4. Como usar este documento no Hermes
 
-| Prioridade | Item | Motivo |
-|---|---|---|
-| P0 | Aprovação cria serviço uma única vez | Bug de fluxo e duplicidade |
-| P0 | Transactions em substituições | Risco de perda de dados |
-| P0 | Corrigir versionamento | Inconsistência comercial |
-| P0 | Corrigir numeração concorrente | Risco de colisão |
-| P1 | Aplicar acesso/assinatura/permissões | Segurança SaaS |
-| P1 | Padronizar contrato de erro | Integração mobile/API |
-| P1 | Financeiro vinculado ao serviço | Resultado auditável |
-| P1 | Upload privado | Privacidade e infraestrutura |
-| P1 | Retirar Obra do fluxo principal | UX e domínio |
-| P2 | Feature flags/capacidades | Produto adaptável |
-| P2 | Aditivos | Mudança de escopo pós-aprovação |
-| P2 | Compras/fornecedores | Custo real e estoque |
-| P2 | Garantia/retorno | Pós-serviço |
-| P2 | Follow-up comercial | Inteligência comercial |
-| P2 | Limpeza de legado | Manutenção |
-| P2 | Observabilidade/CI | Operação em produção |
+Para cada etapa abaixo existe um bloco `GOAL HERMES` pronto.
 
----
-
-# 5. ETAPA 0 — Preparação e baseline
-
-## 5.1 Objetivo
-
-Criar uma linha de base segura antes de alterar schema e regras de domínio.
-
-## 5.2 Ações
-
-- [ ] Criar branch específica para cada etapa de código; não misturar todas as etapas em um único PR.
-- [ ] Executar `npm ci` ou instalação equivalente com lockfile.
-- [ ] Executar `npm run lint`.
-- [ ] Executar `npm run typecheck`.
-- [ ] Executar `npm test`.
-- [ ] Executar `npm run build`.
-- [ ] Gerar snapshot/documentação da estrutura atual do banco.
-- [ ] Validar migrations aplicadas em produção antes de criar novas migrations.
-- [ ] Realizar backup do banco antes das migrations de domínio.
-- [ ] Registrar a versão atual do mobile compatível com a API.
-
-## 5.3 Regra de migration
-
-Não fazer em uma única migration:
+Use:
 
 ```text
-adicionar novo campo
-+ mover dados
-+ remover campo antigo
+/goal draft <conteúdo do bloco da etapa>
 ```
 
-Usar:
+Antes de iniciar a próxima etapa:
 
 ```text
-Migration A → adiciona novo modelo/campo nullable
-Deploy A → aplicação grava novo + mantém legado
-Backfill → migra dados existentes
-Deploy B → mobile/API usam novo modelo
-Migration B → somente depois remove legado
+/goal status
 ```
 
-## 5.4 Critério de aceite
+Depois da revisão:
 
-Baseline documentado e todos os comandos de qualidade executados antes da primeira alteração funcional.
+```text
+/goal clear
+```
+
+Não use:
+
+```text
+/goal implemente todo este documento
+```
 
 ---
 
-# 6. ETAPA 1 — Corrigir Orçamento → Aprovação → Serviço
+# ETAPA 0 — Baseline técnico e proteção contra regressão
 
-## 6.1 Problema atual
+## Objetivo de negócio
 
-Existem duas responsabilidades sobrepostas:
+Garantir que as próximas alterações não sejam feitas sobre uma base já quebrada e que seja possível diferenciar regressão nova de problema preexistente.
+
+## Objetivo técnico
+
+Criar uma referência verificável do estado atual da API, banco, migrations e testes.
+
+## Problema que resolve
+
+Sem baseline, uma grande refatoração pode introduzir falhas e a equipe não consegue provar se o problema já existia antes.
+
+## Arquivos/domínios a analisar
+
+- `package.json`
+- lockfile
+- `prisma/schema.prisma`
+- `prisma/migrations/**`
+- `src/app.module.ts`
+- `src/main.ts`
+- `test/**`
+- `.env.example`
+- docs atuais de deploy/migrations
+
+## Alterações obrigatórias
+
+### 0.1 Qualidade
+
+Executar e registrar resultado de:
+
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npx prisma validate
+npx prisma generate
+```
+
+Se algum script não existir, identificar o equivalente; não inventar script silenciosamente.
+
+### 0.2 Banco
+
+- conferir migrations existentes;
+- conferir se o schema representa o banco esperado;
+- documentar migrations pendentes;
+- não executar migration destrutiva em produção nesta etapa;
+- registrar estratégia de backup antes das etapas com alteração estrutural.
+
+### 0.3 Contrato atual
+
+Registrar os endpoints críticos atuais:
 
 ```text
-QuotesService.approve()
-  → status APROVADO
+/auth
+/clients
+/quotes
+/service-orders
+/payments
+/expenses
+/uploads
+```
+
+### 0.4 Testes de fumaça
+
+Criar apenas se inexistentes:
+
+- API inicia;
+- health/liveness responde;
+- Prisma conecta no ambiente de teste;
+- um request autenticado básico funciona.
+
+## O que NÃO alterar
+
+- não mudar regra de negócio;
+- não renomear modelos;
+- não alterar fluxo de Orçamento;
+- não mexer em financeiro;
+- não remover código legado.
+
+## Critério de aceite
+
+- baseline documentado;
+- lint/typecheck/tests/build conhecidos;
+- migrations conhecidas;
+- nenhum comportamento funcional alterado.
+
+## GOAL HERMES — ETAPA 0
+
+```text
+/goal draft
+Você está trabalhando no repositório SmartGesso-API.
+
+OBJETIVO DA ETAPA
+Criar uma baseline técnica confiável antes da refatoração V4, sem modificar regra de negócio.
+
+LEIA PRIMEIRO
+- docs/PLANO_REFATORACAO_BACKEND_V4.md — ETAPA 0
+- package.json e lockfile
+- prisma/schema.prisma
+- prisma/migrations/**
+- src/main.ts
+- src/app.module.ts
+- test/**
+
+O QUE DEVE FAZER
+1. Inspecionar scripts e dependências atuais.
+2. Executar lint, typecheck, testes, build, prisma validate e prisma generate usando os comandos reais disponíveis.
+3. Identificar falhas preexistentes e corrigi-las somente se forem claramente de baseline e não alterarem regra de negócio; documentar qualquer correção.
+4. Revisar migrations existentes e registrar riscos/pêndencias.
+5. Confirmar os endpoints críticos atuais de auth, clients, quotes, service-orders, payments, expenses e uploads.
+6. Criar testes de fumaça mínimos somente se inexistentes.
+7. Produzir um resumo objetivo da baseline ao final.
+
+NÃO DEVE
+- alterar schema funcionalmente;
+- mudar fluxos de negócio;
+- remover Work/Obra;
+- mudar financeiro;
+- iniciar Etapa 1.
+
+CRITÉRIO DE CONCLUSÃO
+A etapa termina somente quando a baseline estiver documentada e os comandos de qualidade tiverem resultado conhecido e reproduzível.
+```
+
+---
+
+# ETAPA 1 — Aprovação de orçamento cria um único Serviço
+
+## Objetivo de negócio
+
+Transformar a aprovação do cliente em uma operação simples e confiável: **aprovar um orçamento deve resultar automaticamente em exatamente um Serviço**.
+
+## Objetivo técnico
+
+Unificar `approve()` e `convertToService()` em uma única regra idempotente e transacional.
+
+## Problema atual
+
+Hoje existe sobreposição:
+
+```text
+approve()
+  → APROVADO
   → cria ServiceOrder
-  → marca convertedAt
+  → convertedAt
 
-QuotesService.convertToService()
+convertToService()
   → exige APROVADO
   → cria ServiceOrder
-  → marca convertedAt
+  → convertedAt
 ```
 
-O sistema deve ter **uma única operação canônica**.
+Isso faz o Mobile poder aprovar e, em seguida, tentar converter novamente.
 
-## 6.2 Decisão
+## Arquivos a analisar/alterar
 
-`approve()` será a operação oficial e idempotente.
+Principais:
 
-Contrato desejado:
+- `src/modules/quotes/quotes.service.ts`
+- `src/modules/quotes/quotes.controller.ts`
+- `src/modules/quotes/dto/**`
+- `src/modules/service-orders/**`
+- `prisma/schema.prisma`
+- `test/quotes-convert-to-service.spec.ts`
+
+Possíveis novos testes:
+
+- `test/quotes-approve.spec.ts`
+- `test/e2e/quotes-approve.e2e-spec.ts`
+
+## Alterações obrigatórias
+
+### 1.1 Regra canônica
+
+`POST /quotes/:id/approve` passa a:
+
+1. localizar orçamento por `id + companyId`;
+2. validar estado;
+3. detectar se já existe Serviço originado daquele orçamento;
+4. abrir transaction;
+5. marcar `APROVADO` somente se necessário;
+6. registrar histórico somente se houve transição real;
+7. criar ServiceOrder se ainda não existir;
+8. marcar `convertedAt` de forma coerente;
+9. retornar orçamento + Serviço.
+
+### 1.2 Idempotência
+
+Segunda chamada para o mesmo orçamento deve retornar o mesmo Serviço, não criar outro e não retornar erro de duplicidade funcional.
+
+### 1.3 Constraint
+
+Garantir no banco que um orçamento não gere duas OS. Preferência:
+
+```prisma
+@@unique([companyId, quoteId])
+```
+
+se compatível com o schema atual.
+
+### 1.4 Endpoint legado
+
+`POST /quotes/:id/convert-to-service`:
+
+- manter temporariamente;
+- marcar como deprecated;
+- internamente reutilizar a mesma regra;
+- não duplicar implementação.
+
+Remoção ocorrerá somente depois do Mobile migrar.
+
+### 1.5 Response
+
+Contrato sugerido:
 
 ```json
 {
-  "quote": {
-    "id": "...",
-    "status": "APROVADO"
-  },
-  "serviceOrder": {
-    "id": "...",
-    "code": 123,
-    "status": "PENDENTE"
-  },
+  "quote": { "id": "...", "status": "APROVADO" },
+  "serviceOrder": { "id": "...", "code": 123, "status": "PENDENTE" },
   "serviceOrderCreated": true
 }
 ```
 
-Se a aprovação for repetida:
+## Não alterar nesta etapa
 
-```json
-{
-  "quote": {
-    "id": "...",
-    "status": "APROVADO"
-  },
-  "serviceOrder": {
-    "id": "...",
-    "code": 123,
-    "status": "PENDENTE"
-  },
-  "serviceOrderCreated": false
-}
-```
+- não remover `Work`;
+- não reestruturar financeiro;
+- não alterar UI Mobile;
+- não criar Aditivos/Compras;
+- não renomear `ServiceOrder` no Prisma.
 
-## 6.3 Modificações no schema
+## Testes obrigatórios
 
-Recomendado adicionar unicidade de origem:
+- RASCUNHO → aprovação cria 1 Serviço;
+- ENVIADO → aprovação cria 1 Serviço;
+- APROVADO novamente → retorna Serviço existente;
+- concorrência → banco termina com 1 Serviço;
+- CANCELADO → não aprova;
+- tenant A não aprova quote de B;
+- histórico não duplica aprovação;
+- endpoint legado retorna a mesma entidade sem duplicação.
 
-```prisma
-model ServiceOrder {
-  // ...
-  quoteId String? @db.Char(36)
+## Critério de aceite
 
-  @@unique([companyId, quoteId])
-}
-```
+Para qualquer `Quote`, existe **0 ou 1** `ServiceOrder` de origem. Nunca 2.
 
-Observação: em MySQL, `NULL` pode repetir; isso permite serviços avulsos futuramente sem bloquear vários registros com `quoteId = null`.
-
-## 6.4 Modificações em `QuotesService`
-
-Arquivo principal:
+## GOAL HERMES — ETAPA 1
 
 ```text
-src/modules/quotes/quotes.service.ts
-```
+/goal draft
+Leia integralmente docs/PLANO_REFATORACAO_BACKEND_V4.md e implemente SOMENTE a ETAPA 1.
 
-Subetapas:
+OBJETIVO DE NEGÓCIO
+Fazer com que aprovar um orçamento gere automaticamente exatamente um Serviço, sem segunda conversão manual e sem duplicidade.
 
-1. Buscar o orçamento com tenant.
-2. Rejeitar cancelado.
-3. Se já aprovado, buscar `ServiceOrder` por `companyId + quoteId` e retornar o existente.
-4. Se ainda não aprovado, iniciar uma única transaction.
-5. Atualizar o orçamento para `APROVADO`.
-6. Criar histórico de aprovação.
-7. Criar `ServiceOrder` uma única vez.
-8. Marcar `convertedAt`.
-9. Retornar orçamento + serviço.
+OBJETIVO TÉCNICO
+Tornar POST /quotes/:id/approve a operação canônica, transacional e idempotente; convert-to-service ficará temporariamente apenas como compatibilidade e reutilizará a mesma regra.
 
-Não usar duas operações independentes para aprovar e converter.
-
-## 6.5 Endpoint legado
-
-```text
-POST /quotes/:id/convert-to-service
-```
-
-Fase A:
-
-- manter endpoint por compatibilidade;
-- fazer endpoint chamar a mesma lógica interna idempotente;
-- marcar no código/documentação como `@deprecated`.
-
-Fase B, depois que o mobile estiver migrado:
-
-- remover endpoint.
-
-## 6.6 Testes obrigatórios
-
-- [ ] orçamento RASCUNHO aprovado → cria exatamente 1 serviço.
-- [ ] orçamento ENVIADO aprovado → cria exatamente 1 serviço.
-- [ ] orçamento já APROVADO → retorna mesmo serviço.
-- [ ] duas chamadas concorrentes → apenas um serviço persiste.
-- [ ] orçamento CANCELADO → não aprova.
-- [ ] empresa A não aprova orçamento da empresa B.
-- [ ] histórico registra somente a transição real.
-
-## 6.7 Critério de aceite
-
-Nenhum fluxo funcional pode criar duas OS para o mesmo orçamento.
-
-### Prompt de implementação da Etapa 1
-
-```text
-Atue como engenheiro backend sênior no repositório SmartGesso-API.
-
-Objetivo: corrigir o fluxo Orçamento → Aprovação → Serviço sem reescrever a arquitetura.
-
-Leia primeiro:
+ANALISE E ALTERE PRINCIPALMENTE
 - prisma/schema.prisma
 - src/modules/quotes/quotes.service.ts
 - src/modules/quotes/quotes.controller.ts
+- src/modules/quotes/dto/**
 - src/modules/service-orders/**
 - test/quotes-convert-to-service.spec.ts
-- docs/PLANO_REFATORACAO_BACKEND_V4.md, Etapa 1
+- novos testes de approve/e2e se necessários
 
-Regras:
-1. approve() deve ser a operação canônica e idempotente.
-2. Um orçamento pode gerar no máximo uma ServiceOrder.
-3. Não confiar em companyId vindo do body.
-4. Executar aprovação, histórico, criação do serviço e convertedAt na mesma transaction.
-5. Manter convert-to-service temporariamente apenas como compatibilidade e fazê-lo reutilizar a mesma regra, sem duplicar implementação.
-6. Não alterar módulos não relacionados.
-7. Criar/ajustar migration de unicidade segura se necessário.
-8. Criar testes para repetição, concorrência, tenant isolation e cancelamento.
-9. Ao final executar lint, typecheck, testes e build.
-10. Mostre um resumo dos arquivos alterados, decisões tomadas e riscos residuais.
+ALTERAÇÕES OBRIGATÓRIAS
+1. Buscar Quote sempre pelo tenant autenticado.
+2. Validar transição de status.
+3. Criar ServiceOrder dentro da mesma transaction da aprovação.
+4. Garantir unicidade de origem Quote→ServiceOrder no banco.
+5. Retornar quote + serviceOrder + serviceOrderCreated.
+6. Segunda aprovação deve retornar o serviço já existente.
+7. Histórico de aprovação não deve duplicar evento quando não houve nova transição.
+8. convert-to-service deve chamar a mesma regra interna e ser marcado deprecated.
+9. Adicionar testes de concorrência, repetição, cancelamento e isolamento tenant.
+
+NÃO ALTERE
+- financeiro;
+- Work/Obra;
+- uploads;
+- módulos de produto avançado;
+- frontend.
+
+VALIDAÇÃO
+Execute lint, typecheck, testes, build, prisma validate e prisma generate.
+
+CONCLUSÃO
+Só considere concluído quando for impossível persistir duas OS para o mesmo orçamento e todos os testes relevantes estiverem verdes.
 ```
 
 ---
 
-# 7. ETAPA 2 — Garantir transações atômicas em atualizações compostas
+# ETAPA 2 — Transactions e integridade de atualizações compostas
 
-## 7.1 Quote items
+## Objetivo de negócio
 
-Problema atual: `quoteItem.deleteMany()` ocorre antes da `$transaction` de atualização.
+Impedir que uma falha de rede, banco ou validação deixe orçamento ou Serviço parcialmente alterado.
 
-Corrigir para:
+## Objetivo técnico
+
+Mover operações relacionadas de `delete/update/create` para transactions atômicas.
+
+## Problemas atuais
+
+- `QuoteItem.deleteMany()` pode ocorrer antes da transaction do update.
+- `ServiceOrderMaterial.deleteMany()` possui risco equivalente.
+
+## Arquivos principais
+
+- `src/modules/quotes/quotes.service.ts`
+- `src/modules/service-orders/service-orders.service.ts`
+- `src/modules/production-orders/**`
+- `src/modules/inventory/**`
+- `src/modules/payments/**`
+- `src/modules/subscriptions/**`
+
+## Alterações obrigatórias
+
+### 2.1 Quote update
+
+Executar dentro de `prisma.$transaction`:
 
 ```text
-transaction
-  ├── validar / carregar estado
-  ├── deleteMany itens antigos
-  ├── update quote
-  ├── create itens novos
-  ├── create history se necessário
-  └── commit
+validar estado
+→ apagar itens antigos
+→ atualizar quote
+→ criar novos itens
+→ histórico se aplicável
+→ commit
 ```
 
-Se qualquer passo falhar, tudo deve retornar ao estado anterior.
+### 2.2 ServiceOrder update
 
-## 7.2 ServiceOrder materials
+Substituição de materiais deve ser atômica.
 
-Aplicar o mesmo padrão ao substituir `ServiceOrderMaterial`.
+### 2.3 Auditoria de padrões perigosos
 
-## 7.3 Demais pontos a revisar
-
-Pesquisar padrões do tipo:
+Pesquisar combinações de:
 
 ```text
-deleteMany(...)
-update(...)
-create(...)
+deleteMany
+update
+createMany/create
 ```
 
-fora de transação nos módulos:
+que representam uma única intenção de negócio mas estejam fora de transaction.
 
-- quotes
-- service-orders
+## O que não fazer
+
+Não embrulhar toda operação simples em transaction desnecessariamente. O foco é **consistência de uma intenção composta**.
+
+## Testes
+
+- falha após `deleteMany` → rollback;
+- falha ao criar novo item → itens antigos permanecem;
+- falha de material → OS permanece íntegra.
+
+## Critério de aceite
+
+Nenhuma atualização composta auditada termina em estado parcial observável.
+
+## GOAL HERMES — ETAPA 2
+
+```text
+/goal draft
+Implemente SOMENTE a ETAPA 2 de docs/PLANO_REFATORACAO_BACKEND_V4.md.
+
+OBJETIVO
+Garantir atomicidade nas atualizações compostas do SmartGesso-API.
+
+ANALISE
+- quotes.service.ts
+- service-orders.service.ts
 - production-orders
 - inventory
 - payments
 - subscriptions
 
-## 7.4 Testes
+FAÇA
+1. Identifique delete/update/create que pertencem à mesma intenção de negócio.
+2. Mova Quote item replacement para uma transaction única.
+3. Mova ServiceOrder material replacement para uma transaction única.
+4. Corrija outros casos realmente equivalentes encontrados, mas documente por que pertencem ao escopo.
+5. Não altere regra funcional além da atomicidade.
+6. Crie testes que forcem falha intermediária e comprovem rollback.
 
-- [ ] falha após delete de item → rollback completo.
-- [ ] falha ao criar novo item → itens antigos permanecem.
-- [ ] material de OS não fica vazio em atualização falha.
+NÃO FAÇA
+- não mude versionamento;
+- não mude sequência;
+- não mude financeiro;
+- não remova Obra;
+- não avance para Etapa 3.
 
-## 7.5 Critério de aceite
-
-Nenhuma atualização composta deixa entidade parcialmente modificada.
+CONCLUSÃO
+Todos os fluxos compostos corrigidos precisam ser comprovadamente atômicos por testes.
+```
 
 ---
 
-# 8. ETAPA 3 — Corrigir versionamento e duplicação de orçamento
+# ETAPA 3 — Versionamento correto de orçamento
 
-## 8.1 Regra comercial
+## Objetivo de negócio
 
-### Nova versão
+Preservar a história comercial: uma revisão do mesmo orçamento mantém o número; uma cópia nova recebe outro número.
 
-```text
-#52 v1
-  ↓ nova versão
-#52 v2
-  ↓ nova versão
-#52 v3
-```
-
-### Duplicar
+## Regra alvo
 
 ```text
-#52 v3
-  ↓ duplicar
-#53 v1
+Nova versão:
+#52 v1 → #52 v2 → #52 v3
+
+Duplicar:
+#52 v3 → #53 v1
 ```
 
-## 8.2 Mudanças
+## Arquivos principais
 
-`createVersion()`:
+- `src/modules/quotes/quotes.service.ts`
+- DTOs/types de Quote
+- `prisma/schema.prisma` se for necessário `sourceQuoteId`/`quoteGroupId`
+- testes de quote/version
 
-- manter `quoteNumber` do original;
-- calcular `MAX(version) + 1` para aquele `companyId + quoteNumber`;
-- status inicial `RASCUNHO`;
-- copiar itens e demais campos;
-- criar histórico da nova versão.
+## Alterações obrigatórias
 
-`duplicate()`:
+### 3.1 `createVersion()`
 
-- obter novo número;
-- definir `version = 1`.
+- manter `quoteNumber`;
+- obter próxima versão para `companyId + quoteNumber`;
+- copiar itens, local, prazo, pagamento e campos comerciais necessários;
+- novo status `RASCUNHO`;
+- não alterar versão original.
 
-## 8.3 Melhoria recomendada
+### 3.2 `duplicate()`
 
-Guardar relação opcional entre versões:
+- gerar novo `quoteNumber`;
+- `version = 1`;
+- copiar conteúdo apropriado;
+- manter histórico de origem opcional.
 
-```prisma
-sourceQuoteId String? @db.Char(36)
+### 3.3 Rastreabilidade
+
+Preferível adicionar uma relação de origem/família somente se isso simplificar navegação e auditoria sem criar complexidade desnecessária.
+
+## Testes
+
+- version mantém número;
+- version incrementa versão;
+- duplicate troca número e volta v1;
+- original permanece imutável;
+- tenant isolado;
+- concorrência não cria duas `v2`.
+
+## GOAL HERMES — ETAPA 3
+
+```text
+/goal draft
+Implemente SOMENTE a ETAPA 3 do plano backend V4.
+
+OBJETIVO
+Corrigir a semântica comercial de versionamento de orçamento.
+
+REGRAS
+- nova versão mantém quoteNumber;
+- nova versão incrementa version;
+- duplicar gera novo quoteNumber e version 1;
+- original não pode ser alterado;
+- copie todos os campos comerciais que o documento define como parte do snapshot;
+- preserve tenant isolation;
+- trate concorrência de versão.
+
+ARQUIVOS
+Analise quotes.service.ts, DTOs de Quote, schema Prisma e testes relacionados.
+
+NÃO ALTERE
+financeiro, Work, uploads ou Mobile.
+
+CRITÉRIO
+#52 v1 → nova versão = #52 v2; duplicar #52 v2 → novo número v1.
 ```
-
-ou um `quoteGroupId`, caso seja necessário navegar facilmente pela família de versões no futuro.
-
-## 8.4 Testes
-
-- [ ] createVersion mantém número.
-- [ ] createVersion incrementa versão.
-- [ ] duplicate muda número e volta para v1.
-- [ ] concorrência não gera duas versões iguais.
 
 ---
 
-# 9. ETAPA 4 — Numeração concorrente segura
+# ETAPA 4 — Numeração concorrente segura
 
-## 9.1 Problema
+## Objetivo de negócio
 
-Padrão atual:
+Evitar que dois usuários trabalhando simultaneamente recebam o mesmo número de orçamento, Serviço ou outro documento.
 
-```text
-SELECT último código
-+ 1
-```
+## Objetivo técnico
 
-Dois usuários podem obter o mesmo número.
+Substituir “buscar maior código + 1” por sequência atômica por empresa e tipo.
 
-## 9.2 Solução recomendada
+## Arquivos principais
 
-Criar contador por tenant e tipo:
+- `prisma/schema.prisma`
+- novo serviço em `src/modules/core/services/` ou módulo específico de sequence
+- `quotes.service.ts`
+- `service-orders.service.ts`
+- production/purchase quando aplicável
+
+## Modelo sugerido
 
 ```prisma
 model CompanySequence {
-  companyId    String @db.Char(36)
+  companyId    String
   sequenceType String
-  currentValue Int    @default(0)
+  currentValue Int      @default(0)
   updatedAt    DateTime @updatedAt
 
   @@id([companyId, sequenceType])
 }
 ```
 
-Tipos iniciais:
+## Alterações obrigatórias
+
+- incremento atômico;
+- transação compatível com criação da entidade;
+- sequências separadas por tenant;
+- tipos iniciais `QUOTE`, `SERVICE_ORDER` e os realmente existentes;
+- backfill/inicialização sem reiniciar numeração existente.
+
+## Testes
+
+Executar solicitações paralelas e verificar números distintos e sequenciais.
+
+## GOAL HERMES — ETAPA 4
 
 ```text
-QUOTE
-SERVICE_ORDER
-PRODUCTION_ORDER
-PURCHASE
-ADDITIONAL
+/goal draft
+Implemente SOMENTE a ETAPA 4.
+
+OBJETIVO
+Eliminar colisões de numeração causadas pelo padrão SELECT último + 1.
+
+FAÇA
+1. Levante todos os lugares que geram número sequencial.
+2. Crie CompanySequence ou mecanismo equivalente atômico por tenant e tipo.
+3. Inicialize sem perder a numeração existente.
+4. Use a sequência nos fluxos de Quote e ServiceOrder primeiro; aplique aos outros tipos já existentes que usam o mesmo padrão.
+5. Teste concorrência real/integração.
+
+NÃO MUDE
+regra de negócio dos documentos, financeiro, Work ou uploads.
+
+CRITÉRIO
+Duas requisições simultâneas nunca persistem o mesmo código dentro do mesmo tenant.
 ```
-
-## 9.3 Serviço de sequência
-
-Criar:
-
-```text
-src/modules/core/services/company-sequence.service.ts
-```
-
-Responsabilidades:
-
-- incrementar atomicamente;
-- retornar próximo número;
-- operar dentro de transaction quando necessário;
-- nunca receber tenant livre do frontend.
-
-## 9.4 Critério de aceite
-
-Testar múltiplas solicitações paralelas sem colisão de número.
 
 ---
 
-# 10. ETAPA 5 — Segurança SaaS: guards, assinatura e permissões
+# ETAPA 5 — Segurança SaaS: assinatura, permissões e contrato de erros
 
-## 10.1 Objetivo
+## Objetivo de negócio
 
-Garantir que autenticação, tenant, assinatura e permissão sejam verificações independentes e consistentes.
+Garantir que uma empresa suspensa ou um usuário sem permissão não continue operando o sistema apenas porque possui token válido.
 
-Fluxo recomendado:
+## Objetivo técnico
+
+Aplicar guards de forma consistente e padronizar códigos de erro consumidos pelo Mobile.
+
+## Arquivos principais
+
+- `src/modules/core/guards/**`
+- `src/modules/core/company-permissions.ts`
+- controllers operacionais
+- auth/session quando necessário
+- testes de autorização
+
+## Alterações obrigatórias
+
+### 5.1 Pipeline
+
+Rota operacional deve seguir, conforme aplicável:
 
 ```text
 JwtAuthGuard
-  ↓
-ActiveCompanyGuard
-  ↓
-CompanyAccessGuard
-  ↓
-PermissionsGuard (quando a rota exige permissão específica)
-  ↓
-Controller
+→ ActiveCompanyGuard
+→ CompanyAccessGuard
+→ PermissionsGuard
+→ controller
 ```
 
-## 10.2 Aplicar `CompanyAccessGuard`
-
-Revisar controllers operacionais:
+### 5.2 Controllers a revisar
 
 - clients
-- works enquanto existir
-- measurements
-- compositions
+- works/measurements enquanto existirem
 - quotes
 - service-orders
 - production-orders
@@ -556,192 +763,219 @@ Revisar controllers operacionais:
 - schedule
 - notifications
 - uploads/attachments
-- company-dashboard
+- dashboards
 
-Não aplicar indiscriminadamente a endpoints que precisam continuar acessíveis para resolver a suspensão, como informações mínimas de assinatura/suporte, caso sejam necessárias.
+### 5.3 Permissões
 
-## 10.3 Aplicar permissões
+Centralizar matriz em `company-permissions.ts`; não espalhar enums ad hoc.
 
-Matriz inicial sugerida:
+### 5.4 Suspensão
 
-| Domínio | Owner | Manager | Sales | Finance | Installer | Production |
-|---|---:|---:|---:|---:|---:|---:|
-| Clientes leitura | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Clientes escrita | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Orçamentos leitura | ✅ | ✅ | ✅ | ✅ | 👁 | ❌ |
-| Orçamentos escrita | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Aprovar/rejeitar orçamento | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Serviços leitura | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Execução/checklist/fotos | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
-| Financeiro | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
-| Estoque | ✅ | ✅ | 👁 | ❌ | ✅ | ✅ |
-| Produção | ✅ | ✅ | ❌ | ❌ | 👁 | ✅ |
-| Usuários/configurações | ✅ | ✅* | ❌ | ❌ | ❌ | ❌ |
-
-`*` conforme política escolhida para Manager.
-
-A matriz real deve ficar centralizada em `company-permissions.ts` e coberta por testes.
-
-## 10.4 Contrato de erro de assinatura
-
-A API pode manter `HTTP 402`, mas o contrato deve ser estável:
+Manter contrato estável por `code`, por exemplo:
 
 ```json
 {
   "statusCode": 402,
   "code": "COMPANY_ACCESS_SUSPENDED",
   "message": "O acesso da empresa está suspenso.",
-  "details": {
-    "companyName": "...",
-    "accessStatus": "SUSPENDED",
-    "supportPhone": "..."
-  }
+  "details": {}
 }
 ```
 
-O mobile deverá reagir ao `code`, não somente ao status HTTP.
+Mobile deve reagir ao `code`; não dependa exclusivamente de 402/403.
 
-## 10.5 Testes obrigatórios
+### 5.5 Exceções deliberadas
 
-- [ ] usuário sem vínculo não acessa tenant.
-- [ ] empresa suspensa não acessa módulos operacionais.
-- [ ] tenant A não consulta tenant B.
-- [ ] SALES não lança despesa.
-- [ ] FINANCE não altera orçamento.
-- [ ] INSTALLER não visualiza custo se não permitido.
+Rotas necessárias para recuperar acesso, suporte, trocar empresa ou consultar situação não devem ser bloqueadas de forma circular.
+
+## Testes
+
+- tenant A não acessa B;
+- empresa suspensa não opera;
+- SALES não lança despesa se política proibir;
+- FINANCE não altera orçamento se política proibir;
+- INSTALLER não vê custos sem permissão;
+- Owner/Manager conforme matriz.
+
+## GOAL HERMES — ETAPA 5
+
+```text
+/goal draft
+Implemente SOMENTE a ETAPA 5 do plano backend V4.
+
+OBJETIVO
+Fechar lacunas de autorização SaaS sem quebrar login, seleção de empresa ou recuperação de acesso.
+
+FAÇA
+1. Audite todos os controllers operacionais e guards atuais.
+2. Aplique CompanyAccessGuard onde operação deve ser bloqueada por assinatura/status.
+3. Aplique PermissionsGuard/RequirePermissions conforme matriz central.
+4. Centralize códigos de erro estáveis, principalmente COMPANY_ACCESS_SUSPENDED.
+5. Garanta que rotas de suporte/seleção necessárias não entrem em deadlock de autorização.
+6. Crie testes por role, tenant e assinatura.
+
+NÃO FAÇA
+- não reestruture Financeiro;
+- não remova Work;
+- não mude uploads além do necessário para guard;
+- não altere Mobile.
+
+CRITÉRIO
+Token válido não é suficiente para operar se empresa estiver suspensa ou role não possuir permissão.
+```
 
 ---
 
-# 11. ETAPA 6 — Retirar "Obra" do fluxo principal de forma segura
+# ETAPA 6 — Remover Obra do fluxo principal e criar Ambientes do Orçamento
 
-## 11.1 Objetivo
+## Objetivo de negócio
 
-Eliminar a dependência do usuário final em `Work` sem apagar dados antigos abruptamente.
+Permitir que o profissional faça orçamento e medição diretamente no contexto do cliente/local, sem cadastrar “Obra” como entidade intermediária obrigatória.
 
-## 11.2 Novo conceito: ambiente do orçamento
+## Objetivo técnico
 
-Criar:
+Introduzir `QuoteEnvironment` e migrar `Measurement` progressivamente de `Work` para ambiente do orçamento.
 
-```prisma
-model QuoteEnvironment {
-  id          String   @id @default(uuid()) @db.Char(36)
-  companyId   String   @db.Char(36)
-  quoteId     String   @db.Char(36)
-  name        String
-  description String?  @db.Text
-  order       Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+## Arquivos principais
 
-  quote        Quote         @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  measurements Measurement[]
+- `prisma/schema.prisma`
+- módulo `works`
+- módulo `measurements`
+- módulo `quotes`
+- novo módulo/serviço de `quote-environments`
+- cálculo de composição/material
+- testes de backfill/compatibilidade
 
-  @@index([companyId])
-  @@index([quoteId])
-}
-```
+## Alterações obrigatórias
 
-E evoluir `Measurement`:
+### 6.1 Schema compatível
 
-```text
-workId             String?       // legado temporário
-quoteEnvironmentId String?       // novo vínculo
-```
+Criar `QuoteEnvironment` com:
 
-## 11.3 Fases de migração
+- `companyId`
+- `quoteId`
+- `name`
+- `description?`
+- `order`
+- timestamps
 
-### 6A — schema compatível
-
-- adicionar `QuoteEnvironment`;
-- tornar novo vínculo opcional;
-- manter `workId`.
-
-### 6B — API nova
-
-Novos endpoints possíveis:
+E permitir em `Measurement`:
 
 ```text
-POST   /quotes/:quoteId/environments
+workId             opcional/legado
+quoteEnvironmentId novo vínculo
+```
+
+Não remover `workId` agora.
+
+### 6.2 Endpoints
+
+Implementar contrato equivalente a:
+
+```text
 GET    /quotes/:quoteId/environments
-PATCH  /quotes/:quoteId/environments/:id
-DELETE /quotes/:quoteId/environments/:id
-
-POST   /quotes/:quoteId/environments/:id/measurements
+POST   /quotes/:quoteId/environments
+PATCH  /quotes/:quoteId/environments/:environmentId
+DELETE /quotes/:quoteId/environments/:environmentId
+POST   /quotes/:quoteId/environments/:environmentId/measurements
+PATCH  /quotes/:quoteId/environments/:environmentId/measurements/:id
 ```
 
-### 6C — mobile migra
+### 6.3 Tenant
 
-O mobile deixa de pedir Obra e passa a registrar ambientes/medições no próprio orçamento.
+Todo `quoteId`, `environmentId` e `measurementId` precisa ser validado contra `companyId` ativo.
 
-### 6D — backfill
+### 6.4 Cálculo de materiais
 
-Para dados antigos, transformar `Work + Measurements` em ambientes quando fizer sentido ou manter consulta de histórico legado.
+Adaptar composição para consumir medições dos ambientes sem depender de Work.
 
-### 6E — depreciação
+### 6.5 Compatibilidade
 
-Somente depois:
+- manter endpoints legados de Work durante migração;
+- não apagar dados antigos;
+- documentar depreciação.
 
-- retirar `WorksModule` de novos fluxos;
-- avaliar remoção futura do model.
+## Não fazer
 
-## 11.4 O que NÃO fazer
+- não dropar tabela Work;
+- não migrar todo histórico automaticamente sem regra validada;
+- não alterar Financeiro.
 
-Não apagar `Work` na primeira migration.
+## Testes
+
+- criar ambiente no quote correto;
+- impedir ambiente em quote de outro tenant;
+- medição funciona sem Work;
+- cálculo de materiais funciona com novo vínculo;
+- dados legados continuam consultáveis.
+
+## GOAL HERMES — ETAPA 6
+
+```text
+/goal draft
+Implemente SOMENTE a ETAPA 6.
+
+OBJETIVO DE NEGÓCIO
+Eliminar Obra como passo obrigatório do novo orçamento, permitindo ambientes e medições diretamente dentro do Quote.
+
+OBJETIVO TÉCNICO
+Adicionar QuoteEnvironment e novo vínculo de Measurement sem remover Work nesta fase.
+
+ALTERE
+- prisma/schema.prisma
+- módulos quotes, measurements e works quando necessário
+- crie módulo/serviço de QuoteEnvironment
+- adapte composição/material para o novo vínculo
+- crie migrations compatíveis
+- crie testes tenant e compatibilidade
+
+REGRAS
+1. Work continua existindo para legado.
+2. workId não deve ser removido agora.
+3. Todo novo endpoint valida companyId do contexto.
+4. Não fazer destructive migration.
+5. Documentar contrato que o Mobile deverá consumir.
+
+CRITÉRIO
+É possível criar Quote → Environment → Measurement → cálculo de materiais sem criar Work.
+```
 
 ---
 
-# 12. ETAPA 7 — Financeiro orientado ao Serviço
+# ETAPA 7 — Financeiro orientado ao Serviço
 
-## 12.1 Problema atual
+## Objetivo de negócio
 
-Hoje existem três fontes de verdade desconectadas:
+Responder com precisão: quanto foi contratado, recebido, falta receber, quanto custou e qual foi o resultado de cada Serviço.
 
-```text
-ServiceOrder.cost
-ServiceOrder.saleValue
-ServiceOrder.profit
-```
+## Objetivo técnico
 
-```text
-Payment → cliente/orçamento
-```
+Conectar despesas e recebimentos ao `ServiceOrder` e substituir `profit` manual por resumo calculado/rastreável.
 
-```text
-Expense → empresa
-```
+## Arquivos principais
 
-Isso permite que o lucro exibido não represente os lançamentos reais.
+- `prisma/schema.prisma`
+- `src/modules/payments/**`
+- `src/modules/expenses/**`
+- `src/modules/service-orders/**`
+- inventory movements
+- novo módulo/service financeiro de Serviço
+- DTOs e testes financeiros
 
-## 12.2 Estratégia em duas fases
+## Alterações obrigatórias
 
-### Fase 7A — integração sem ruptura
+### 7.1 Vínculo de despesa
 
-Adicionar a `Payment` e `Expense`:
+Adicionar `serviceOrderId?` em Expense.
 
-```text
-serviceOrderId String?
-```
+- despesa direta → Serviço;
+- despesa administrativa → sem Serviço.
 
-Adicionar relações Prisma e índices.
+### 7.2 Recebíveis
 
-Regra:
+Curto prazo: vincular Payment/recebimentos ao Serviço com relação Prisma coerente.
 
-- recebimento de serviço deve apontar para `ServiceOrder`;
-- despesa direta deve apontar para `ServiceOrder`;
-- despesa administrativa continua com `serviceOrderId = null`.
-
-Criar categoria de vínculo:
-
-```text
-DIRECT
-OVERHEAD
-```
-
-ou atributo equivalente para diferenciar custo direto e despesa geral.
-
-### Fase 7B — domínio financeiro explícito
-
-Quando o comportamento estiver consolidado, considerar separar:
+Médio prazo recomendado: separar conceitos:
 
 ```text
 Receivable
@@ -749,320 +983,389 @@ ReceivableInstallment
 Receipt
 ```
 
-porque o model atual `Payment` mistura conceitos de cobrança, parcela e recebimento.
+Não executar migração destrutiva em um único deploy.
 
-## 12.3 Resultado calculado
+### 7.3 Resumo financeiro
 
-Criar `ServiceFinancialSummaryService` ou domínio equivalente.
-
-Saída:
-
-```json
-{
-  "serviceOrderId": "...",
-  "contractValue": 10000,
-  "approvedAdditionals": 1200,
-  "totalContracted": 11200,
-  "received": 7000,
-  "receivable": 4200,
-  "directExpenses": 4400,
-  "inventoryConsumptionCost": 900,
-  "realizedCost": 5300,
-  "projectedResult": 5900,
-  "realizedCashResult": 1700,
-  "marginPct": 52.68
-}
-```
-
-Definir claramente semântica de:
-
-- valor contratado;
-- receita recebida;
-- valor a receber;
-- custo previsto;
-- custo realizado;
-- resultado econômico;
-- resultado de caixa.
-
-Não misturar competência e caixa.
-
-## 12.4 `profit` no ServiceOrder
-
-Opções aceitáveis:
-
-1. remover como campo após migração; ou
-2. manter como cache/denormalização recalculada exclusivamente pelo backend.
-
-Não permitir que `profit` seja digitado pelo cliente.
-
-## 12.5 Corrigir relação `quoteId` de Payment
-
-Revisar `prisma/schema.prisma` e `PaymentsService` para garantir que o modelo Prisma e o uso de `quote: { connect: ... }` estejam coerentes.
-
-O schema deve conter relação explícita caso o service use nested connect.
-
-## 12.6 Endpoints sugeridos
+Criar endpoint, por exemplo:
 
 ```text
 GET /service-orders/:id/financial-summary
-GET /service-orders/:id/expenses
-POST /service-orders/:id/expenses
-GET /service-orders/:id/receivables
-POST /service-orders/:id/receivables
-POST /receivables/:id/installments/:installmentId/receive
 ```
 
-## 12.7 Testes
+Resposta deve separar:
 
-- [ ] despesa da empresa A não entra no serviço da empresa B.
-- [ ] custo direto soma corretamente.
-- [ ] despesa geral não altera custo direto do serviço.
-- [ ] parcelas somam o total do recebível.
-- [ ] recebimento parcial não marca tudo como recebido.
-- [ ] margem usa regra documentada.
+- valor contratado;
+- aditivos aprovados;
+- total contratado;
+- recebido;
+- a receber;
+- custo previsto;
+- custo realizado;
+- resultado projetado;
+- resultado realizado/caixa conforme semântica documentada;
+- margem.
+
+### 7.4 `profit`
+
+Não aceitar `profit` como input confiável do cliente. Se mantido no schema, deve ser cache calculado pelo backend e possuir regra de atualização explícita.
+
+### 7.5 Estoque
+
+Evitar dupla contagem entre compra, entrada em estoque e consumo do Serviço.
+
+## Testes
+
+- despesa direta entra no Serviço correto;
+- despesa geral não entra;
+- recebimento parcial;
+- parcelas somam exatamente o total;
+- tenant isolation;
+- permissão financeira;
+- cálculo de margem;
+- arredondamento.
+
+## GOAL HERMES — ETAPA 7
+
+```text
+/goal draft
+Implemente SOMENTE a ETAPA 7 do backend V4.
+
+OBJETIVO
+Transformar o ServiceOrder na unidade financeira central e tornar o resultado auditável a partir de lançamentos reais.
+
+ANALISE
+- schema Prisma
+- payments
+- expenses
+- service-orders
+- inventory movements
+
+FAÇA
+1. Adicione vínculo opcional ServiceOrder em Expense e recebimentos com migration compatível.
+2. Corrija relações Prisma inconsistentes existentes.
+3. Diferencie despesa direta de despesa geral.
+4. Crie ServiceFinancialSummary com contrato explícito.
+5. Pare de tratar profit digitado como fonte da verdade.
+6. Documente claramente competência x caixa e previsto x realizado.
+7. Garanta que compra/estoque/consumo não sejam contabilizados duas vezes.
+8. Crie testes financeiros e tenant/permission.
+
+NÃO FAÇA
+- não remova Payment abruptamente;
+- não quebre Mobile sem compatibilidade;
+- não implemente Aditivos ainda, apenas deixe summary preparado para eles se necessário.
+
+CRITÉRIO
+O resultado de um Serviço deve ser derivável de dados relacionais rastreáveis, não de um número manual isolado.
+```
 
 ---
 
-# 13. ETAPA 8 — Uploads privados e Attachments
+# ETAPA 8 — Anexos privados e storage abstrato
 
-## 13.1 Problema atual
+## Objetivo de negócio
 
-O upload exige autenticação, porém o arquivo fica em filesystem local e é exposto estaticamente por `/uploads`.
+Proteger fotos de clientes, comprovantes, documentos de compra e evidências de Serviço.
 
-## 13.2 Modelo recomendado
+## Objetivo técnico
 
-```prisma
-model Attachment {
-  id          String   @id @default(uuid()) @db.Char(36)
-  companyId   String   @db.Char(36)
-  entityType  String
-  entityId    String
-  category    String
-  storageKey  String   @unique
-  originalName String?
-  mimeType    String
-  size        Int
-  sha256      String?
-  createdById String?  @db.Char(36)
-  createdAt   DateTime @default(now())
-  deletedAt   DateTime?
+Substituir `/uploads` público por entidade `Attachment` autorizada por tenant e provider de storage.
 
-  @@index([companyId])
-  @@index([entityType, entityId])
-}
-```
+## Arquivos principais
 
-Categorias:
+- `src/modules/uploads/**`
+- `src/main.ts` static assets
+- `prisma/schema.prisma`
+- novo módulo `attachments`
+- storage provider
+- guards/permissões
 
-```text
-QUOTE_PHOTO
-SERVICE_BEFORE
-SERVICE_DURING
-SERVICE_AFTER
-RECEIPT
-PURCHASE_DOCUMENT
-WARRANTY
-COMPANY_LOGO
-OTHER
-```
+## Alterações obrigatórias
 
-## 13.3 Storage abstraction
+### 8.1 Attachment
 
-Criar interface:
+Campos mínimos:
+
+- companyId
+- entityType/entityId
+- category
+- storageKey
+- originalName
+- mimeType
+- size
+- hash opcional
+- createdBy
+- timestamps/deletedAt
+
+### 8.2 StorageProvider
+
+Interface:
 
 ```text
-StorageProvider
-  upload()
-  open/read()
-  delete()
-  createSignedUrl() // se provider permitir
+upload
+read/stream
+delete
+signedUrl opcional
 ```
 
-Implementações possíveis:
+Implementações:
+
+- local privado para dev/transição;
+- S3-compatible para produção quando configurado.
+
+### 8.3 Segurança
+
+- MIME real validado;
+- limite de tamanho;
+- UUID para storage key;
+- sem path traversal;
+- download exige autorização ou URL assinada curta;
+- não servir diretório privado via `useStaticAssets`.
+
+### 8.4 Migração
+
+Manter compatibilidade temporária com URLs antigas se houver dados reais; definir migração separada.
+
+## GOAL HERMES — ETAPA 8
 
 ```text
-LocalPrivateStorageProvider   // transição/dev
-S3CompatibleStorageProvider   // produção
+/goal draft
+Implemente SOMENTE a ETAPA 8.
+
+OBJETIVO
+Eliminar exposição pública de arquivos privados e criar uma arquitetura de Attachment segura e escalável.
+
+FAÇA
+1. Audite uploads.service/controller e static assets.
+2. Crie model Attachment tenant-scoped.
+3. Crie StorageProvider desacoplado do controller.
+4. Implemente provider local privado para dev e interface pronta para S3-compatible.
+5. Crie upload/list/download/delete autorizados.
+6. Valide MIME, tamanho, storage key e tenant.
+7. Remova exposição estática dos novos arquivos.
+8. Preserve estratégia de compatibilidade para arquivos antigos.
+9. Teste tenant A tentando acessar arquivo de B.
+
+NÃO FAÇA
+- não migre todos os arquivos existentes de forma destrutiva nesta etapa;
+- não altere financeiro;
+- não altere Mobile.
+
+CRITÉRIO
+Conhecer a URL/storageKey de um arquivo não deve ser suficiente para acessá-lo.
 ```
-
-Não acoplar controllers diretamente ao filesystem.
-
-## 13.4 Download seguro
-
-Opção 1:
-
-```text
-GET /attachments/:id/content
-  → JwtAuthGuard
-  → ActiveCompanyGuard
-  → CompanyAccessGuard
-  → verifica attachment.companyId
-  → stream
-```
-
-Opção 2: URL assinada curta emitida somente após autorização.
-
-## 13.5 Validações
-
-- validar MIME real, não confiar somente em extensão do nome;
-- mapear extensão a partir do MIME validado;
-- limite de tamanho por categoria;
-- nomes aleatórios/UUID;
-- impedir path traversal;
-- registrar tenant e criador;
-- excluir logicamente antes de remoção física, se houver política de retenção.
-
-## 13.6 Critério de aceite
-
-Conhecer a URL física de um arquivo não deve ser suficiente para acessá-lo.
 
 ---
 
-# 14. ETAPA 9 — Aditivos de Serviço
+# ETAPA 9 — Aditivos de Serviço
 
-## 14.1 Motivação
+## Objetivo de negócio
 
-Mudanças de escopo depois da aprovação não devem alterar silenciosamente o orçamento original.
+Registrar mudanças de escopo depois da aprovação sem alterar o orçamento original aceito pelo cliente.
 
-## 14.2 Modelo
+## Objetivo técnico
 
-```prisma
-model ServiceAdditional {
-  id             String   @id @default(uuid()) @db.Char(36)
-  companyId      String   @db.Char(36)
-  serviceOrderId String   @db.Char(36)
-  code           Int
-  description    String   @db.Text
-  amount         Decimal  @db.Decimal(15, 2)
-  estimatedCost  Decimal? @db.Decimal(15, 2)
-  status         String
-  approvedAt     DateTime?
-  rejectedAt     DateTime?
-  notes          String?  @db.Text
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-```
+Criar `ServiceAdditional` com ciclo de status e impacto financeiro apenas quando aprovado.
 
-Status sugeridos:
+## Modelo mínimo
+
+- companyId
+- serviceOrderId
+- code
+- description
+- amount
+- estimatedCost?
+- status
+- approvedAt/rejectedAt
+- notes
+- timestamps
+
+Status:
 
 ```text
-DRAFT
-SENT
-APPROVED
-REJECTED
-CANCELLED
+DRAFT → SENT → APPROVED/REJECTED
+                    ↓
+                 CANCELLED quando aplicável
 ```
 
-## 14.3 Regra financeira
+## Regra
 
-Somente aditivo `APPROVED` entra em `totalContracted`.
+Somente `APPROVED` entra em `totalContracted`.
+
+Orçamento aprovado original permanece imutável.
+
+## GOAL HERMES — ETAPA 9
+
+```text
+/goal draft
+Implemente SOMENTE a ETAPA 9.
+
+OBJETIVO
+Adicionar Aditivos de Serviço para mudanças de escopo pós-aprovação sem editar o Quote original.
+
+FAÇA
+- criar schema/migration ServiceAdditional;
+- endpoints CRUD/status tenant-scoped;
+- sequência própria se necessário;
+- validação de transição de status;
+- integrar somente adicionais APPROVED ao financial-summary;
+- audit log nas aprovações/cancelamentos;
+- testes de status, tenant e cálculo.
+
+NÃO FAÇA
+- não alterar Quote aprovado;
+- não permitir edição silenciosa do total original;
+- não implementar Compras nesta etapa.
+
+CRITÉRIO
+É possível demonstrar contrato original + aditivos aprovados separadamente e calcular total contratado corretamente.
+```
 
 ---
 
-# 15. ETAPA 10 — Fornecedores e Compras
+# ETAPA 10 — Fornecedores, Compras e integração com Estoque
 
-## 15.1 Modelos
+## Objetivo de negócio
 
-```text
-Supplier
-Purchase
-PurchaseItem
-```
+Transformar a necessidade de material em compra rastreável e custo real.
 
-`Purchase` deve poder se relacionar com:
+## Objetivo técnico
 
-```text
-serviceOrderId?   // compra direta para um serviço
-supplierId
-status
-purchaseDate
-invoiceNumber?
-total
-```
+Criar `Supplier`, `Purchase`, `PurchaseItem` e integração controlada com `InventoryMovement`.
 
-`PurchaseItem`:
+## Fluxo alvo
 
 ```text
-materialId?
-description
-quantity
-unit
-unitCost
-total
+Serviço
+→ necessidade de material
+→ fornecedor
+→ compra
+→ recebimento
+→ entrada estoque
+→ consumo no Serviço
+→ custo realizado
 ```
 
-## 15.2 Integração com estoque
+## Alterações obrigatórias
 
-Ao receber compra:
+- Supplier tenant-scoped;
+- Purchase com status;
+- PurchaseItem;
+- vínculo opcional com ServiceOrder;
+- recebimento gera movimento de entrada;
+- consumo do Serviço gera movimento de saída/consumo;
+- regra explícita para não contar compra + consumo duas vezes no resultado.
+
+## GOAL HERMES — ETAPA 10
 
 ```text
-Purchase RECEIVED
-  ↓
-InventoryMovement ENTRADA
+/goal draft
+Implemente SOMENTE a ETAPA 10.
+
+OBJETIVO
+Adicionar Fornecedores e Compras e integrar ao estoque sem dupla contagem financeira.
+
+FAÇA
+1. Criar Supplier, Purchase e PurchaseItem com companyId.
+2. Definir estados de compra e transições.
+3. Permitir vínculo opcional a ServiceOrder.
+4. Ao receber compra, gerar InventoryMovement de entrada de forma idempotente.
+5. Ao consumir material, vincular movimento ao Serviço.
+6. Documentar onde o custo passa a afetar o resultado para evitar compra+consumo duplicados.
+7. Criar testes de idempotência, estoque, tenant e financeiro.
+
+NÃO FAÇA
+- não tornar Produção obrigatória;
+- não criar módulo contábil completo;
+- não alterar Aditivos além da integração de summary se necessária.
+
+CRITÉRIO
+Uma compra recebida atualiza estoque uma única vez e o consumo pode ser rastreado até o custo do Serviço.
 ```
-
-Ao consumir material:
-
-```text
-ServiceOrder
-  ↓
-InventoryMovement CONSUMO
-  ↓
-Custo realizado do serviço
-```
-
-## 15.3 Evitar dupla contagem
-
-Se compra entra em estoque, o custo do serviço deve ser reconhecido no consumo/reserva conforme a regra adotada, e não contar compra + consumo duas vezes no mesmo resultado.
-
-Documentar o critério contábil/gerencial escolhido.
 
 ---
 
-# 16. ETAPA 11 — Garantia e Retorno
+# ETAPA 11 — Garantia e Retorno pós-serviço
 
-## 16.1 Modelo sugerido
+## Objetivo de negócio
+
+Registrar atendimento após conclusão sem destruir o histórico do Serviço original.
+
+## Objetivo técnico
+
+Criar entidade de retorno/garantia vinculada ao Serviço, com anexos, custos e status próprios.
+
+## Alterações
+
+Modelo sugerido:
 
 ```text
-ServiceWarrantyReturn
+WarrantyReturn
+- companyId
+- serviceOrderId
+- type: WARRANTY | RETURN | REWORK
+- reason
+- status
+- openedAt
+- scheduledAt
+- closedAt
+- cost
+- notes
 ```
 
-Campos:
+Regras:
+
+- Serviço original continua concluído;
+- retorno tem timeline própria;
+- custo de retorno pode ser classificado como garantia ou serviço cobrado;
+- anexos usam Attachment.
+
+## GOAL HERMES — ETAPA 11
 
 ```text
-companyId
-serviceOrderId
-type: WARRANTY | RETURN | REWORK
-reason
-status
-openedAt
-scheduledAt
-closedAt
-cost
-notes
+/goal draft
+Implemente SOMENTE a ETAPA 11.
+
+OBJETIVO
+Criar fluxo rastreável de garantia/retorno sem reabrir ou sobrescrever o Serviço original.
+
+FAÇA
+- schema/migration WarrantyReturn;
+- endpoints tenant-scoped;
+- transições de status;
+- integração com Attachment;
+- custo do retorno com semântica documentada;
+- testes.
+
+NÃO FAÇA
+- não alterar status do Serviço concluído automaticamente;
+- não misturar retorno com Aditivo.
+
+CRITÉRIO
+O histórico mostra claramente Serviço concluído e eventos posteriores de garantia/retorno separados.
 ```
-
-Anexos devem usar `Attachment`.
-
-## 16.2 Regra
-
-A conclusão original do serviço não deve ser apagada. Retorno é um evento posterior e rastreável.
 
 ---
 
-# 17. ETAPA 12 — Follow-up comercial e motivos de perda
+# ETAPA 12 — Follow-up comercial e motivos de perda
 
-## 17.1 Objetivo
+## Objetivo de negócio
 
-Transformar orçamento em funil comercial mensurável.
+Aumentar conversão e permitir entender por que orçamentos são perdidos.
 
-## 17.2 Modelos possíveis
+## Objetivo técnico
 
-```text
-QuoteFollowUp
-QuoteLossReason
-```
+Adicionar follow-ups estruturados e motivos de perda vinculados ao Quote.
+
+## Alterações
+
+- `QuoteFollowUp`;
+- motivo estruturado na rejeição/perda;
+- próxima data de contato;
+- responsável quando aplicável;
+- timeline;
+- métricas futuras.
 
 Motivos iniciais:
 
@@ -1076,40 +1379,51 @@ SCOPE_CHANGED
 OTHER
 ```
 
-## 17.3 Métricas futuras
+## GOAL HERMES — ETAPA 12
 
-- taxa de aprovação;
-- tempo médio até resposta;
-- ticket médio aprovado;
-- motivo de perda;
-- propostas sem follow-up;
-- propostas vencidas;
-- conversão por vendedor.
+```text
+/goal draft
+Implemente SOMENTE a ETAPA 12.
+
+OBJETIVO
+Transformar Quotes enviados em funil comercial mensurável com follow-up e motivo de perda.
+
+FAÇA
+- criar QuoteFollowUp e estrutura de loss reason;
+- endpoints para agendar/registrar contato;
+- adaptar reject sem perder observação livre;
+- gerar dados para métricas de conversão;
+- tenant/permission/audit tests.
+
+NÃO FAÇA
+- não alterar lógica de aprovação já estabilizada;
+- não criar CRM genérico fora do escopo.
+
+CRITÉRIO
+É possível saber quais propostas precisam de contato e por que propostas foram perdidas.
+```
 
 ---
 
-# 18. ETAPA 13 — Feature flags e capacidades por empresa
+# ETAPA 13 — Feature flags e capacidades por empresa/plano
 
-## 18.1 Problema
+## Objetivo de negócio
 
-Nem toda empresa usa produção, estoque avançado ou equipe.
+Permitir que o SmartGesso atenda tanto autônomos quanto empresas com estoque, produção, equipe e financeiro avançado sem poluir todos os usuários com todos os módulos.
 
-## 18.2 Solução
+## Objetivo técnico
 
-Não duplicar a verdade entre `Plan.features` e configurações da empresa sem regra clara.
+Fornecer capabilities efetivas calculadas a partir do plano e configurações permitidas.
 
-Estratégia recomendada:
+## Alterações
+
+Definir regra única, por exemplo:
 
 ```text
-EffectiveFeatures = Plan.features ∩ CompanyOverrides
+EffectiveFeatures = features permitidas pelo Plan + overrides/configuração válida da Company
 ```
 
-Ou seja:
-
-- plano define o que pode usar;
-- empresa configura o que está habilitado entre as opções permitidas.
-
-Capacidades iniciais:
+Features iniciais:
 
 ```text
 production
@@ -1122,225 +1436,135 @@ pushNotifications
 customBranding
 ```
 
-## 18.3 Endpoint
+Endpoint:
 
 ```text
 GET /companies/current/features
 ```
 
-Resposta:
+Backend também deve bloquear endpoint de feature desabilitada; esconder no Mobile não é segurança.
 
-```json
-{
-  "production": false,
-  "inventory": true,
-  "purchases": true,
-  "team": false,
-  "advancedFinance": true
-}
+## GOAL HERMES — ETAPA 13
+
+```text
+/goal draft
+Implemente SOMENTE a ETAPA 13.
+
+OBJETIVO
+Criar capabilities efetivas por empresa/plano sem duplicar fontes de verdade.
+
+FAÇA
+1. Audite Plan.features e configurações existentes.
+2. Defina uma regra única de resolução de feature.
+3. Crie service/hook backend para consultar feature efetiva.
+4. Exponha GET /companies/current/features.
+5. Proteja endpoints de módulos opcionais quando feature estiver desabilitada.
+6. Crie testes de combinação plano x company override x permission.
+
+NÃO FAÇA
+- não alterar UI Mobile;
+- não criar novo sistema de billing;
+- não duplicar feature config em vários lugares.
+
+CRITÉRIO
+Uma feature possui uma fonte de resolução clara e o backend não permite uso quando desabilitada.
 ```
 
-O backend continua autorizando a feature; esconder no mobile sozinho não é segurança.
+---
+
+# ETAPA 14 — Limpeza de legado e responsabilidades
+
+## Objetivo de negócio
+
+Reduzir custo de manutenção sem remover compatibilidade prematuramente.
+
+## Objetivo técnico
+
+Eliminar sobreposição como `BusinessService`, reduzir `any` e consolidar responsabilidades após as novas estruturas estarem estabilizadas.
+
+## Arquivos principais
+
+- `src/business.service.ts`
+- `src/modules/core/core.module.ts`
+- módulos companies/plans/subscriptions
+- decorators/request context
+- código legado `convert-to-service`, Works quando Mobile já estiver migrado
+
+## Alterações obrigatórias
+
+- mapear cada método de `BusinessService` e consumidor;
+- mover para módulo responsável;
+- remover somente depois de zerar imports;
+- criar tipos/decorators como `CurrentCompany`/request typed quando útil;
+- remover endpoint legado apenas após Mobile não usá-lo;
+- iniciar depreciação real de Work somente depois do backfill/compatibilidade.
+
+## GOAL HERMES — ETAPA 14
+
+```text
+/goal draft
+Implemente SOMENTE a ETAPA 14.
+
+OBJETIVO
+Remover legado e sobreposição de responsabilidades depois que os fluxos novos estiverem comprovadamente em uso.
+
+FAÇA
+- audite BusinessService e CoreModule;
+- mova responsabilidades para módulos donos;
+- reduza any em contexto/request/responses;
+- remova código deprecated apenas se busca no repositório provar ausência de consumidores;
+- preserve migrations/dados legados necessários;
+- rode suíte completa.
+
+NÃO FAÇA
+- não remova Work se Mobile/produção ainda depender;
+- não remova convert-to-service se versão ativa do Mobile ainda usar;
+- não faça limpeza estética fora do escopo.
+
+CRITÉRIO
+Menos duplicação, mesmos comportamentos suportados e nenhum consumidor quebrado.
+```
 
 ---
 
-# 19. ETAPA 14 — Limpeza de legado e responsabilidades
+# ETAPA 15 — Precisão monetária, contratos tipados e OpenAPI
 
-## 19.1 `BusinessService`
+## Objetivo de negócio
 
-Revisar `src/business.service.ts`.
+Evitar divergência de centavos e bugs de contrato entre API e Mobile.
 
-Objetivo:
+## Objetivo técnico
 
-- identificar métodos ainda utilizados;
-- mover responsabilidades para módulos específicos já existentes;
-- eliminar duplicação de Company/Plan/Subscription/Auth;
-- remover somente quando todos os imports tiverem sido migrados.
+Padronizar `Decimal`, arredondamento, responses e geração de client/tipos via OpenAPI.
 
-## 19.2 `CoreModule`
+## Alterações obrigatórias
 
-`CoreModule` não deve virar um depósito de regras de negócio. Manter nele apenas infraestrutura transversal realmente compartilhada:
+### Dinheiro
 
-- guards;
-- permissions;
-- sequence service;
-- decorators;
-- utilidades de contexto.
+- manter Decimal no banco;
+- usar `Prisma.Decimal` ou centavos inteiros nas regras críticas;
+- converter para number/string somente na borda com contrato definido;
+- padronizar arredondamento.
 
-## 19.3 Tipagem
+Revisar:
 
-Reduzir `any` principalmente em:
-
-- request context;
-- conversions de Prisma;
-- DTOs;
-- responses financeiras.
-
-Criar tipos explícitos para `AuthenticatedRequest`/contexto ou decorators como `@CurrentCompany()`.
-
----
-
-# 20. ETAPA 15 — Dinheiro e precisão numérica
-
-## 20.1 Regra
-
-Não usar JavaScript `number` como fonte principal de cálculo monetário no domínio financeiro quando houver operações cumulativas relevantes.
-
-## 20.2 Recomendações
-
-- manter `Decimal(15,2)` no banco;
-- usar `Prisma.Decimal` em regras críticas;
-- ou representar internamente valores monetários em centavos inteiros quando apropriado;
-- converter para `number` apenas na borda de resposta quando necessário para o mobile;
-- arredondamento deve ser explícito.
-
-## 20.3 Revisar
-
-- cálculo de orçamento;
+- orçamento;
 - desconto;
 - margem;
 - parcelamento;
 - aditivos;
 - compras;
-- custo de estoque;
-- resultado.
-
----
-
-# 21. ETAPA 16 — Testes e garantia de qualidade
-
-## 21.1 Pirâmide recomendada
-
-### Unitários
-
-- regras de cálculo;
-- permissões;
-- status transitions;
-- numeração;
-- versionamento;
+- estoque;
 - financeiro.
 
-### Integração
+### OpenAPI
 
-- Prisma + banco de teste;
-- transactions;
-- constraints;
-- tenant isolation.
+- estabilizar DTOs/responses;
+- exportar spec;
+- padronizar lista/paginação;
+- permitir geração de client no Mobile.
 
-### E2E
-
-Fluxos completos:
-
-```text
-login
-→ selecionar empresa
-→ cadastrar cliente
-→ criar orçamento
-→ aprovar
-→ serviço criado
-→ registrar despesa
-→ registrar recebimento
-→ concluir serviço
-→ consultar resultado
-```
-
-## 21.2 Casos críticos obrigatórios
-
-- [ ] tenant A nunca acessa tenant B.
-- [ ] aprovação dupla não duplica serviço.
-- [ ] refresh token antigo reutilizado revoga sessões conforme regra.
-- [ ] empresa suspensa não usa API operacional.
-- [ ] role sem permissão recebe bloqueio.
-- [ ] update falho não perde itens.
-- [ ] sequência concorrente não colide.
-- [ ] parcelas somam exatamente o total.
-- [ ] upload de tenant A não é acessível por tenant B.
-
-## 21.3 Bug a revisar no refresh reuse
-
-No fluxo de detecção de refresh token reutilizado, revisar blocos `try/catch` para garantir que a exceção de reuso não seja engolida pelo próprio `catch`. A revogação pode acontecer, mas o comportamento/erro deve permanecer explícito e testado.
-
----
-
-# 22. ETAPA 17 — Observabilidade e operação em produção
-
-## 22.1 Logging
-
-Migrar gradualmente `console.error` para logger estruturado.
-
-Campos úteis:
-
-```text
-requestId
-userId
-companyId
-route
-method
-statusCode
-durationMs
-errorCode
-entityType
-entityId
-```
-
-Nunca logar:
-
-- senha;
-- JWT completo;
-- refresh token;
-- chaves bancárias completas quando desnecessário;
-- documento sensível sem mascaramento.
-
-## 22.2 AuditLog
-
-Aproveitar `AuditLog` para ações sensíveis:
-
-- aprovação/rejeição;
-- exclusão lógica;
-- alteração financeira;
-- baixa de parcela;
-- alteração de permissão;
-- suspensão/reactivação;
-- upload/exclusão de documento.
-
-## 22.3 Health
-
-Health check deve separar, quando possível:
-
-```text
-liveness
-readiness
-DB connectivity
-```
-
-## 22.4 Migrations de produção
-
-Produção deve usar:
-
-```text
-prisma migrate deploy
-```
-
-Nunca `migrate dev`.
-
----
-
-# 23. ETAPA 18 — Contrato OpenAPI e geração do client mobile
-
-O `package.json` do mobile possui um TODO para geração de client.
-
-Backend já expõe Swagger em desenvolvimento.
-
-Recomendação:
-
-1. estabilizar DTOs/responses principais;
-2. exportar OpenAPI no CI;
-3. gerar tipos/client consumidos pelo mobile;
-4. reduzir divergências como `array puro` vs `{ data, total }`.
-
-## 23.1 Padronizar paginação
-
-Escolher um contrato único para listas:
+Contrato sugerido de paginação:
 
 ```json
 {
@@ -1348,237 +1572,109 @@ Escolher um contrato único para listas:
   "pagination": {
     "page": 1,
     "pageSize": 20,
-    "total": 150,
-    "totalPages": 8
+    "total": 120,
+    "totalPages": 6
   }
 }
 ```
 
-Aplicar primeiro aos módulos que podem crescer muito:
-
-- clients;
-- quotes;
-- service-orders;
-- payments/receivables;
-- expenses;
-- notifications;
-- audit logs.
-
----
-
-# 24. Ordem recomendada de implementação
+## GOAL HERMES — ETAPA 15
 
 ```text
-FASE 1 — Estabilização P0
-  1. Aprovação → Serviço idempotente
-  2. Transactions
-  3. Versionamento
-  4. Sequence segura
+/goal draft
+Implemente SOMENTE a ETAPA 15.
 
-FASE 2 — Segurança SaaS
-  5. CompanyAccessGuard
-  6. PermissionsGuard
-  7. Error contract
-  8. Testes tenant/roles
+OBJETIVO
+Padronizar precisão monetária e contratos API para reduzir divergências com o Mobile.
 
-FASE 3 — Domínio principal
-  9. QuoteEnvironment
- 10. Measurement sem Work obrigatório
- 11. Mobile migra
- 12. Work entra em depreciação
+FAÇA
+- audite cálculos monetários com JS number;
+- use Decimal/centavos de forma consistente;
+- documente arredondamento;
+- padronize responses/paginação nos módulos definidos;
+- gere/exporte OpenAPI de forma reproduzível;
+- prepare contrato para client gerado no Mobile;
+- teste valores de borda e arredondamento.
 
-FASE 4 — Financeiro
- 13. serviceOrderId em Expense/Payment
- 14. financial summary
- 15. recebíveis/parcelas/recebimentos
+NÃO FAÇA
+- não reescreva todos os endpoints sem necessidade;
+- não mude semântica financeira já definida na Etapa 7.
 
-FASE 5 — Arquivos
- 16. Attachment
- 17. storage privado
- 18. migração do upload atual
-
-FASE 6 — Expansão de produto
- 19. Aditivos
- 20. Fornecedores/Compras
- 21. Garantia/Retorno
- 22. Follow-up
- 23. Feature flags
-
-FASE 7 — Consolidação
- 24. limpar legado
- 25. OpenAPI client
- 26. observabilidade
- 27. ampliar testes/CI
+CRITÉRIO
+Cálculos críticos são determinísticos e o contrato publicado representa o response real.
 ```
 
 ---
 
-# 25. Checklist de definição de pronto por etapa
+# ETAPA 16 — Testes completos, observabilidade e CI
 
-Uma etapa NÃO está pronta apenas porque compilou.
+## Objetivo de negócio
 
-Considere pronta somente quando:
+Tornar o sistema confiável para produção e reduzir regressões futuras.
 
-- [ ] regra de negócio documentada;
-- [ ] migration criada quando necessária;
-- [ ] migration reversível/segura operacionalmente;
-- [ ] tenant isolation testado;
-- [ ] permissão testada;
-- [ ] testes unitários relevantes criados;
-- [ ] integração/E2E criada para fluxo crítico;
-- [ ] lint verde;
-- [ ] typecheck verde;
-- [ ] testes verdes;
-- [ ] build verde;
-- [ ] OpenAPI atualizado se contrato mudou;
-- [ ] mobile possui estratégia de compatibilidade;
-- [ ] nenhum segredo foi versionado;
-- [ ] nenhuma alteração não relacionada entrou no commit.
+## Objetivo técnico
 
----
+Cobrir fluxos críticos E2E/integration, logging estruturado, audit log e pipeline automático.
 
-# 26. PROMPT MESTRE — Implementação segura do backend
-
-Use este prompt para executar as alterações **uma etapa por vez**.
+## Testes críticos
 
 ```text
-Você é o engenheiro backend sênior responsável por evoluir o SmartGesso-API sem quebrar o produto existente.
-
-CONTEXTO
-- Stack: NestJS 11 + Prisma + MySQL + JWT + Argon2.
-- O sistema é SaaS multiempresa.
-- companyId deve vir do contexto autenticado, nunca de input confiável do usuário.
-- O fluxo de negócio alvo é Cliente → Orçamento → Serviço → Execução/Financeiro → Resultado → Garantia.
-- O mobile depende desta API e mudanças breaking precisam de compatibilidade progressiva.
-
-DOCUMENTO OBRIGATÓRIO
-Leia integralmente docs/PLANO_REFATORACAO_BACKEND_V4.md antes de alterar código.
-Trabalhe SOMENTE na etapa que eu indicar.
-
-ANTES DE CODIFICAR
-1. Inspecione os arquivos atuais relacionados à etapa.
-2. Liste resumidamente o comportamento atual.
-3. Identifique dependências de schema, DTO, service, controller, guard e testes.
-4. Verifique se já existe implementação equivalente para não duplicar lógica.
-5. Preserve compatibilidade com dados existentes.
-
-REGRAS DE IMPLEMENTAÇÃO
-1. Não reescreva o projeto.
-2. Não altere módulos não relacionados.
-3. Não remova tabela/coluna legada na mesma fase em que introduzir a substituta.
-4. Toda operação composta que precisa ser atômica deve usar Prisma transaction.
-5. Toda query de entidade tenant-scoped deve incluir companyId ou passar por mecanismo equivalente comprovadamente seguro.
-6. Nunca confie em companyId vindo de body/query do cliente.
-7. Não use any sem necessidade; crie tipos explícitos quando possível.
-8. Não use console.log/error como solução permanente de observabilidade.
-9. Não exponha segredos, tokens ou arquivos privados.
-10. Para dinheiro, preserve Decimal/precisão e arredondamento explícito.
-11. Alterações de status devem validar transições permitidas.
-12. Endpoints devem ser idempotentes quando a operação de negócio exigir isso.
-13. Se criar migration, explique como ela convive com a versão anterior do mobile/API.
-14. Não use destructive migration sem plano de backfill e rollback.
-15. Mantenha o padrão NestJS já adotado no repositório.
-
-TESTES OBRIGATÓRIOS
-Para toda regra crítica, inclua pelo menos:
-- caminho feliz;
-- erro de validação;
-- tenant incorreto;
-- permissão quando aplicável;
-- repetição/idempotência quando aplicável;
-- rollback quando houver transaction;
-- concorrência quando houver geração de número ou criação única.
-
-VALIDAÇÃO FINAL
-Execute e corrija até ficar verde:
-- npm run lint
-- npm run typecheck
-- npm test
-- npm run build
-
-Se houver migration, valide também:
-- prisma validate
-- prisma generate
-
-SAÍDA FINAL
-Ao terminar, apresente:
-1. Resumo do que foi alterado.
-2. Arquivos modificados.
-3. Migration criada e impacto.
-4. Testes adicionados/alterados.
-5. Contrato de API alterado, se houver.
-6. Compatibilidade com mobile atual.
-7. Riscos residuais.
-8. Próxima etapa recomendada.
-
-IMPORTANTE
-Não comece outra etapa automaticamente. Termine e estabilize a etapa atual primeiro.
+login
+→ selecionar empresa
+→ criar cliente
+→ criar orçamento
+→ aprovar
+→ Serviço criado uma única vez
+→ registrar despesa
+→ registrar recebimento
+→ consultar resultado
+→ concluir Serviço
+→ registrar retorno
 ```
 
----
+Casos obrigatórios:
 
-# 27. Sugestões finais de engenharia
+- tenant isolation;
+- assinatura suspensa;
+- role sem permissão;
+- transaction rollback;
+- sequence concorrente;
+- approval idempotente;
+- upload privado;
+- parcelas e arredondamento.
 
-## 27.1 Não trocar NestJS/Prisma agora
+## Observabilidade
 
-Não há motivo técnico forte para substituir a stack. O ganho virá de melhorar domínio, contratos, segurança e testes.
+Logger estruturado com:
 
-## 27.2 Tratar Serviço como unidade operacional central
+- requestId
+- userId
+- companyId
+- route
+- method
+- statusCode
+- durationMs
+- errorCode
+- entityId quando aplicável
 
-Depois da aprovação, o serviço deve concentrar:
+Nunca logar senha/token/refresh token.
 
-- execução;
-- agenda;
-- equipe;
-- materiais;
-- estoque;
-- compras;
-- despesas;
-- recebíveis;
-- fotos;
+## AuditLog
+
+Registrar ações sensíveis:
+
+- aprovação/rejeição;
+- alterações financeiras;
+- baixa de parcela;
+- permissão;
+- suspensão;
+- anexos;
 - aditivos;
-- resultado;
-- garantia.
+- garantias.
 
-Isso evita múltiplos módulos desconectados representando o mesmo trabalho do cliente.
+## CI
 
-## 27.3 Manter Orçamento imutável após aprovação
-
-Mudança de escopo deve virar `ServiceAdditional`, não edição silenciosa do orçamento aprovado.
-
-## 27.4 Não remover Work/Obra de uma vez
-
-A direção é removê-lo do fluxo principal, mas preservar compatibilidade durante a migração de medições e histórico.
-
-## 27.5 Financeiro: separar projetado, realizado e caixa
-
-Nunca mostrar um único "lucro" sem explicar sua semântica.
-
-Recomenda-se pelo menos:
-
-```text
-Resultado projetado
-Resultado realizado
-Saldo a receber
-Caixa recebido
-Custo realizado
-```
-
-## 27.6 Upload privado é requisito de produção
-
-Fotos de cliente, comprovantes e documentos não devem depender de uma pasta pública.
-
-## 27.7 Feature flags são importantes para posicionamento do produto
-
-O SmartGesso deve funcionar tanto para profissional autônomo quanto para empresa com produção/estoque/equipe. O backend deve fornecer capabilities efetivas.
-
-## 27.8 Gerar client OpenAPI
-
-Isso reduz bugs de contrato, especialmente divergências de arrays, paginação, enums e respostas.
-
-## 27.9 Criar CI mínimo
-
-Em todo PR:
+Em PR:
 
 ```text
 install
@@ -1589,56 +1685,278 @@ install
 → build
 ```
 
-## 27.10 Definir política de backup/migration
-
-Antes de evoluir financeiro e anexos, documentar:
-
-- backup automático;
-- retenção;
-- teste de restore;
-- procedure de migrate deploy;
-- rollback de aplicação.
-
-## 27.11 Evitar microserviços prematuros
-
-A aplicação ainda se beneficia de um **monólito modular**. Separar serviços agora aumentaria complexidade operacional sem resolver os problemas atuais.
-
-## 27.12 Prioridade de negócio recomendada
-
-Depois dos P0/P1, a ordem que tende a gerar mais valor é:
+## GOAL HERMES — ETAPA 16
 
 ```text
-Financeiro por Serviço
-→ Aditivos
-→ Compras/Fornecedores
-→ Garantia/Retorno
-→ Follow-up comercial
-→ funcionalidades avançadas de produção
+/goal draft
+Implemente SOMENTE a ETAPA 16.
+
+OBJETIVO
+Consolidar a V4 com testes completos, observabilidade segura e CI reproduzível.
+
+FAÇA
+1. Levante lacunas de testes nos fluxos críticos do documento.
+2. Adicione integration/E2E para tenant, approval, finance, permissions, attachments e concorrência.
+3. Substitua console.error relevantes por logger estruturado.
+4. Integre AuditLog às ações sensíveis.
+5. Configure CI com install/lint/typecheck/prisma validate/tests/build.
+6. Garanta que logs não exponham segredo.
+
+NÃO FAÇA
+- não adicionar novas features de produto;
+- não refatorar arquitetura funcional fora do necessário para teste/observabilidade.
+
+CRITÉRIO
+PRs futuras falham automaticamente quando quebram contratos ou fluxos críticos protegidos.
 ```
 
 ---
 
-# 28. Resultado esperado após o plano
+# 5. Ordem obrigatória recomendada
 
-Ao final das fases principais, o backend deve conseguir responder com rastreabilidade completa:
+```text
+FASE A — ESTABILIZAÇÃO
+Etapa 0  Baseline
+Etapa 1  Aprovação → Serviço
+Etapa 2  Transactions
+Etapa 3  Versionamento
+Etapa 4  Sequências
+
+FASE B — SEGURANÇA E DOMÍNIO
+Etapa 5  Guards/permissões/assinatura
+Etapa 6  Ambientes e retirada progressiva de Obra
+
+FASE C — GESTÃO OPERACIONAL E FINANCEIRA
+Etapa 7  Financeiro por Serviço
+Etapa 8  Anexos privados
+Etapa 9  Aditivos
+Etapa 10 Compras/Fornecedores
+Etapa 11 Garantia/Retorno
+Etapa 12 Follow-up
+
+FASE D — PRODUTO CONFIGURÁVEL E CONSOLIDAÇÃO
+Etapa 13 Feature flags
+Etapa 14 Limpeza de legado
+Etapa 15 Dinheiro/OpenAPI
+Etapa 16 Testes/observabilidade/CI
+```
+
+Dependências importantes:
+
+```text
+Backend Etapa 1
+→ Mobile Etapa 1
+
+Backend Etapa 6
+→ Mobile migração de Work para Environment
+
+Backend Etapa 7
+→ Mobile Financeiro por Serviço
+
+Backend Etapa 8
+→ Mobile Anexos privados
+
+Backend Etapas 9-13
+→ telas correspondentes no Mobile
+```
+
+---
+
+# 6. Definição de pronto global para qualquer etapa
+
+Uma etapa NÃO está concluída somente porque compila.
+
+Obrigatório quando aplicável:
+
+- [ ] comportamento alvo implementado;
+- [ ] schema/migration compatível;
+- [ ] sem destructive migration prematura;
+- [ ] tenant isolation comprovado;
+- [ ] permissions comprovadas;
+- [ ] DTO/response documentado;
+- [ ] testes de caminho feliz;
+- [ ] testes de erro;
+- [ ] testes de idempotência/rollback/concorrência quando aplicável;
+- [ ] lint verde;
+- [ ] typecheck verde;
+- [ ] testes verdes;
+- [ ] build verde;
+- [ ] prisma validate/generate verdes quando schema mudou;
+- [ ] OpenAPI atualizado se contrato mudou;
+- [ ] compatibilidade com Mobile descrita;
+- [ ] nenhum segredo/versionamento indevido;
+- [ ] nenhuma alteração fora do escopo.
+
+---
+
+# 7. Prompt mestre para qualquer etapa
+
+Use este bloco junto com o `/goal` específico da etapa se quiser reforçar o comportamento do Hermes:
+
+```text
+Você é o engenheiro backend sênior responsável pelo SmartGesso-API.
+
+REGRAS GERAIS
+- leia integralmente docs/PLANO_REFATORACAO_BACKEND_V4.md;
+- execute somente a etapa informada;
+- antes de codificar, inspecione a implementação atual e descreva resumidamente o comportamento existente;
+- não programe por suposição se puder verificar o código;
+- preserve NestJS + Prisma + MySQL;
+- companyId vem do contexto autenticado;
+- preserve compatibilidade de dados;
+- qualquer migration destrutiva exige fase de backfill/compatibilidade anterior;
+- operações compostas críticas devem ser transacionais;
+- idempotência deve existir quando a operação puder ser repetida;
+- não duplique regras já existentes;
+- não faça limpeza cosmética fora da etapa;
+- não comece a próxima etapa automaticamente.
+
+ANTES DE ALTERAR
+1. Liste arquivos que serão tocados.
+2. Identifique contrato atual.
+3. Identifique dependências de schema, DTO, service, controller, guard e testes.
+4. Identifique impacto no Mobile.
+
+VALIDAÇÃO FINAL
+Execute os comandos reais disponíveis equivalentes a:
+- lint
+- typecheck
+- tests
+- build
+- prisma validate
+- prisma generate
+
+SAÍDA FINAL
+Informe:
+1. arquivos alterados;
+2. comportamento anterior;
+3. comportamento novo;
+4. migration/contrato;
+5. testes executados;
+6. riscos residuais;
+7. dependência para o Mobile;
+8. por que a etapa pode ser considerada concluída.
+```
+
+---
+
+# 8. Sugestões finais de engenharia e produto
+
+## 8.1 Não trocar NestJS/Prisma
+
+Os principais problemas atuais são de domínio, contrato e consistência, não de framework.
+
+## 8.2 Manter monólito modular
+
+Microserviços agora aumentariam custo operacional sem resolver as dores atuais.
+
+## 8.3 Serviço como hub
+
+Depois da aprovação, tudo operacional deve convergir para o Serviço:
+
+```text
+agenda
+execução
+materiais
+compras
+estoque
+fotos
+aditivos
+despesas
+recebimentos
+resultado
+garantia
+```
+
+## 8.4 Orçamento aprovado é snapshot
+
+Não editar silenciosamente o que o cliente aprovou. Antes da aprovação use versão; depois da aprovação use Aditivo.
+
+## 8.5 Work deve desaparecer da experiência, não necessariamente do banco no primeiro dia
+
+A migração precisa preservar histórico e compatibilidade.
+
+## 8.6 Financeiro precisa separar conceitos
+
+No mínimo:
+
+```text
+valor contratado
+valor recebido
+a receber
+custo previsto
+custo realizado
+resultado projetado
+resultado realizado/caixa
+margem
+```
+
+## 8.7 Produção deve ser opcional
+
+Capacidade por empresa/plano, não módulo obrigatório para todo cliente.
+
+## 8.8 Compras são mais importantes que um estoque excessivamente sofisticado
+
+A ponte real é:
+
+```text
+necessidade → fornecedor → compra → estoque → consumo → custo
+```
+
+## 8.9 OpenAPI deve virar contrato real entre API e Mobile
+
+Eliminar adapters improvisados no frontend.
+
+## 8.10 Segurança de anexos é requisito de produção
+
+Fotos de residência, comprovantes e documentos não devem ser públicos.
+
+## 8.11 Idempotência além de aprovação
+
+Avaliar também em:
+
+- baixa de parcela;
+- recebimento de compra;
+- upload finalizado;
+- ações offline reenviáveis.
+
+## 8.12 Health checks
+
+Separar liveness, readiness e conectividade com banco quando operacionalmente útil.
+
+## 8.13 Política de backup e restore
+
+Antes de mudanças financeiras e anexos, ter:
+
+- backup automático;
+- retenção;
+- teste de restore;
+- `prisma migrate deploy` em produção;
+- rollback de aplicação documentado.
+
+---
+
+# 9. Resultado esperado ao final da V4
+
+A API deve conseguir responder, com dados rastreáveis:
 
 ```text
 Qual cliente?
-Qual orçamento originou o serviço?
+Qual orçamento?
 Qual versão foi aprovada?
-Qual serviço foi criado?
+Qual Serviço nasceu dele?
 Qual era o valor contratado?
 Quais aditivos foram aprovados?
 Quanto foi recebido?
 Quanto falta receber?
-Quais despesas pertencem ao serviço?
+Quais despesas pertencem ao Serviço?
 Quais materiais foram consumidos?
 Quais compras abasteceram o estoque?
-Qual foi o custo realizado?
+Qual foi o custo real?
 Qual o resultado e a margem?
-Quais fotos/documentos pertencem ao serviço?
-Houve garantia ou retorno?
+Quais anexos pertencem a cada etapa?
+Houve garantia/retorno?
 Quem executou cada ação?
 ```
 
-Quando essas respostas forem derivadas de dados relacionais consistentes — e não de valores manuais desconectados — o SmartGesso estará com uma base adequada para evoluir como SaaS de gestão operacional e financeira.
+O critério final da refatoração é: **dados consistentes, regras simples para o usuário, rastreabilidade completa e nenhuma duplicidade de fonte de verdade desnecessária**.
