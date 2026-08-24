@@ -15,12 +15,12 @@ export class AuditLogService {
   }) {
     return this.prisma.auditLog.create({
       data: {
-        companyId: params.companyId ?? null,
-        userId: params.userId ?? null,
+        companyId: params.companyId ?? undefined,
+        userId: params.userId ?? undefined,
         action: params.action,
         entity: params.entity,
-        entityId: params.entityId ?? null,
-        details: params.details ?? null,
+        entityId: params.entityId ?? undefined,
+        details: params.details ?? undefined,
       },
     });
   }

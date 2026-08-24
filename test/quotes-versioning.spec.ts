@@ -98,7 +98,7 @@ describe('QuotesService.versioning (ETAPA 3 V4)', () => {
       $transaction: jest.fn(async (fn: (t: any) => any) => fn(prisma)),
     };
     sequenceService = { increment: jest.fn().mockResolvedValue(53) };
-    service = new QuotesService(prisma, sequenceService);
+    service = new QuotesService(prisma, sequenceService, { log: jest.fn() } as any);
   });
 
   describe('createVersion', () => {

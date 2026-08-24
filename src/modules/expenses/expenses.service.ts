@@ -1,18 +1,23 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 
 @Injectable()
 export class ExpensesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
-  async create(companyId: string, dto: CreateExpenseDto) {
+  async create(companyId: string, dto: CreateExpenseDto, userId?: string) {
     if (dto.serviceOrderId) {
       await this.ensureServiceOrderBelongsToCompany(companyId, dto.serviceOrderId);
     }
-    return this.prisma.expense.create({
+    
+    const expense = await this.prisma.expense.create({
       data: {
         companyId,
         serviceOrderId: dto.serviceOrderId,
@@ -25,6 +30,22 @@ export class ExpensesService {
         observations: dto.observations,
       },
     });
+
+    // Log audit event
+    await this.auditLogService.log({
+      companyId,
+      userId,
+      action: 'CREATE',
+      entity: 'Expense',
+      entityId: expense.id,
+      details: {
+        category: dto.category,
+        amount: dto.amount,
+        description: dto.description,
+      },
+    });
+
+    return expense;
   }
 
   async findAll(companyId: string, search?: string, category?: string) {

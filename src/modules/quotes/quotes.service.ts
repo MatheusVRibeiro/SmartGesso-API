@@ -494,7 +494,7 @@ export class QuotesService {
   }
 
   /** Rejeita o orçamento: status REJEITADO + registro de histórico. */
-  async reject(companyId: string, id: string, note?: string) {
+  async reject(companyId: string, id: string, note?: string, userId?: string) {
     const quote = await this.findOne(companyId, id);
 
     if (quote.status === 'REJEITADO') {
@@ -506,7 +506,7 @@ export class QuotesService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.quote.update({
         where: { id },
         data: { status: 'REJEITADO' },
@@ -521,6 +521,22 @@ export class QuotesService {
       });
       return this.convertDecimals(updated);
     });
+
+    // Log audit event
+    await this.auditLogService.log({
+      companyId,
+      userId,
+      action: 'REJECT',
+      entity: 'Quote',
+      entityId: id,
+      details: {
+        quoteNumber: result.quoteNumber,
+        status: 'REJEITADO',
+        note: note ?? 'Orçamento não aprovado',
+      },
+    });
+
+    return result;
   }
 
   /** Duplica o orçamento: novo quoteNumber, status RASCUNHO, copia itens/local/prazo. */

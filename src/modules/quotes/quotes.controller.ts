@@ -89,7 +89,7 @@ export class QuotesController {
   @Post(':id/approve')
   @ApiOperation({ summary: 'Aprova o orçamento (status APROVADO + histórico)' })
   approve(@Req() r: any, @Param('id') id: string) {
-    return this.quotesService.approve(r.company.id, id);
+    return this.quotesService.approve(r.company.id, id, r.user?.id);
   }
 
   @Post(':id/reject')
@@ -99,7 +99,7 @@ export class QuotesController {
     @Param('id') id: string,
     @Body('note') note?: string,
   ) {
-    return this.quotesService.reject(r.company.id, id, note);
+    return this.quotesService.reject(r.company.id, id, note, r.user?.id);
   }
 
   @Post(':id/duplicate')

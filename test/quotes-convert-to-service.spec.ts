@@ -81,7 +81,7 @@ describe('QuotesService.convertToService', () => {
   beforeEach(() => {
     buildPrismaMock();
     sequenceService = { increment: jest.fn().mockResolvedValue(7) };
-    service = new QuotesService(prisma, sequenceService);
+    service = new QuotesService(prisma, sequenceService, { log: jest.fn() } as any);
   });
 
   it('cria OS reaproveitando cliente, obra, observações, startDate e total', async () => {
@@ -122,7 +122,7 @@ describe('QuotesService.convertToService', () => {
         },
       },
     });
-    service = new QuotesService(prisma, sequenceService);
+    service = new QuotesService(prisma, sequenceService, { log: jest.fn() } as any);
 
     const result = await service.convertToService('company-1', 'quote-1');
 
@@ -166,7 +166,7 @@ describe('QuotesService.convertToService', () => {
         },
       },
     });
-    service = new QuotesService(prisma, sequenceService);
+    service = new QuotesService(prisma, sequenceService, { log: jest.fn() } as any);
 
     const result = await service.convertToService('company-1', 'quote-1');
 
@@ -190,7 +190,7 @@ describe('QuotesService.convertToService', () => {
         },
       },
     });
-    service = new QuotesService(prisma, sequenceService);
+    service = new QuotesService(prisma, sequenceService, { log: jest.fn() } as any);
 
     await expect(service.convertToService('company-1', 'quote-1')).rejects.toThrow(
       BadRequestException,
@@ -205,7 +205,7 @@ describe('QuotesService.convertToService', () => {
         },
       },
     });
-    service = new QuotesService(prisma, sequenceService);
+    service = new QuotesService(prisma, sequenceService, { log: jest.fn() } as any);
 
     await expect(service.convertToService('company-1', 'inexistente')).rejects.toThrow(
       NotFoundException,
