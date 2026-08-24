@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../../database/prisma.service';
-import { requireSecret } from '../../auth/auth.service';
+import { requireSecret } from '../../../common/utils/require-secret';
 
 export interface TokenPayload {
   sub: string;

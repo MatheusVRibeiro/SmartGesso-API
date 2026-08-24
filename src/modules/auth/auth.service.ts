@@ -8,21 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../database/prisma.service';
-
-// ---------------------------------------------------------------------------
-// Secrets fail-closed: sem JWT_*_SECRET no ambiente, a API NÃO inicia assinatura.
-// Fallbacks hardcoded foram removidos (forjar JWT = acesso total).
-// ---------------------------------------------------------------------------
-export function requireSecret(key: string): string {
-  const v = process.env[key];
-  if (!v || v.length < 16) {
-    throw new Error(
-      `[SECURITY] ${key} ausente ou curto demais no ambiente. ` +
-        'Defina um secret forte (64+ chars) antes de iniciar a API.',
-    );
-  }
-  return v;
-}
+import { requireSecret } from '../../common/utils/require-secret';
 
 // ---------------------------------------------------------------------------
 // Tipos auxiliares

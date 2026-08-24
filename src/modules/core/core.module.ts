@@ -1,7 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PrismaModule } from '../../database/prisma.module';
-import { AuthService } from '../auth/auth.service';
 import { BusinessService } from '../../business.service';
 import { PlatformAdminGuard } from './guards/platform-admin.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -13,7 +12,6 @@ import { PermissionsGuard } from './guards/permissions.guard';
 @Module({
   imports: [JwtModule.register({}), PrismaModule],
   providers: [
-    AuthService,
     BusinessService,
     PlatformAdminGuard,
     JwtAuthGuard,
@@ -23,7 +21,6 @@ import { PermissionsGuard } from './guards/permissions.guard';
   ],
   exports: [
     JwtModule,
-    AuthService,
     BusinessService,
     PlatformAdminGuard,
     JwtAuthGuard,

@@ -10,7 +10,11 @@ import { UPLOADS_DIR, UPLOADS_PREFIX } from './modules/uploads/uploads.service';
 export async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
 
   // CORS com allowlist de origens (fail-closed: sem env vars, só localhost de dev).
   const corsOrigins = [
@@ -25,10 +29,17 @@ export async function bootstrap() {
   ];
   const isDev = process.env.NODE_ENV !== 'production';
   if (isDev && corsOrigins.length === 0) {
-    corsOrigins.push('http://localhost:3000', 'http://localhost:8081', 'http://localhost:5173');
+    corsOrigins.push(
+      'http://localhost:3000',
+      'http://localhost:8081',
+      'http://127.0.0.1:8081',
+      'http://localhost:5173',
+    );
   }
+  // `*` no .env = refletir qualquer origem (dev). Com allowlist real, valida a origem.
+  const allowAllOrigins = corsOrigins.includes('*');
   app.enableCors({
-    origin: corsOrigins.length > 0 ? corsOrigins : false,
+    origin: allowAllOrigins ? true : corsOrigins.length > 0 ? corsOrigins : false,
     credentials: true,
   });
 
