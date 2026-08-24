@@ -732,6 +732,7 @@ model ServiceOrder {
   inventoryMovements InventoryMovement[]
 
   @@unique([companyId, code])
+  @@unique([companyId, quoteId])
   @@index([companyId])
   @@index([clientId])
   @@index([workId])

@@ -67,6 +67,12 @@ export class QuotesController {
   }
 
   @Post(':id/convert-to-service')
+  @ApiOperation({
+    summary: 'Converte orçamento aprovado em OS',
+    deprecated: true,
+    description:
+      'Use POST /quotes/:id/approve (idempotente). Este endpoint será removido em versão futura.',
+  })
   convertToService(@Req() r: any, @Param('id') id: string) {
     return this.quotesService.convertToService(r.company.id, id);
   }

@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -155,13 +154,6 @@ export class QuotesService {
       await this.ensureWorkBelongsToCompany(companyId, dto.workId);
     }
 
-    // Se items foram enviados, substitui todos
-    if (dto.items) {
-      await this.prisma.quoteItem.deleteMany({
-        where: { quoteId: id },
-      });
-    }
-
     const items: QuoteItemDto[] = dto.items || existing.items.map((i) => ({
       itemType: i.itemType,
       name: i.name,
@@ -179,6 +171,13 @@ export class QuotesService {
       dto.status && dto.status !== existing.status ? dto.status : undefined;
 
     return this.prisma.$transaction(async (tx) => {
+      // Se items foram enviados, substitui todos (dentro da transação)
+      if (dto.items) {
+        await tx.quoteItem.deleteMany({
+          where: { quoteId: id },
+        });
+      }
+
       const updated = await tx.quote.update({
         where: { id },
         data: {
@@ -294,58 +293,104 @@ export class QuotesService {
     });
   }
 
-  /** Aprova o orçamento: status APROVADO + registro de histórico. */
+  /**
+   * Cria ou retorna a ServiceOrder vinculada ao orçamento.
+   * Função interna idempotente: se já existe OS para o quote, retorna-a.
+   * Usada tanto por approve() quanto por convertToService() (deprecated).
+   */
+  private async ensureServiceOrderFromQuote(
+    tx: any,
+    companyId: string,
+    quote: { id: string; clientId: string; workId: string | null; startDate: Date | null; total: any; observations: string | null },
+  ) {
+    // 1. Verificar se já existe ServiceOrder para este orçamento (idempotência)
+    const existingOrder = await tx.serviceOrder.findFirst({
+      where: { companyId, quoteId: quote.id },
+      include: SERVICE_ORDER_INCLUDE,
+    });
+    if (existingOrder) {
+      return { serviceOrder: existingOrder, created: false };
+    }
+
+    // 2. Gerar código sequencial (race condition será corrigida na Etapa 4)
+    const lastOrder = await tx.serviceOrder.findFirst({
+      where: { companyId },
+      orderBy: { code: 'desc' },
+      select: { code: true },
+    });
+    const code = (lastOrder?.code ?? 0) + 1;
+
+    // 3. Criar a ServiceOrder
+    const serviceOrder = await tx.serviceOrder.create({
+      data: {
+        companyId,
+        clientId: quote.clientId,
+        workId: quote.workId ?? undefined,
+        quoteId: quote.id,
+        code,
+        status: 'PENDENTE',
+        scheduledDate: quote.startDate ? new Date(quote.startDate) : undefined,
+        saleValue: Number(quote.total),
+        observations: quote.observations ?? undefined,
+      },
+      include: SERVICE_ORDER_INCLUDE,
+    });
+
+    // 4. Marcar orçamento como convertido
+    await tx.quote.update({
+      where: { id: quote.id },
+      data: { convertedAt: new Date() },
+    });
+
+    return { serviceOrder, created: true };
+  }
+
+  /** Aprova o orçamento: status APROVADO + registro de histórico + criação idempotente de OS. */
   async approve(companyId: string, id: string) {
     const quote = await this.findOne(companyId, id);
 
-    if (quote.status === 'APROVADO') {
-      return quote;
-    }
     if (quote.status === 'CANCELADO') {
       throw new BadRequestException(
         'Orçamento cancelado não pode ser aprovado',
       );
     }
 
+    // Se já está APROVADO, retorna sem duplicar histórico
+    const alreadyApproved = quote.status === 'APROVADO';
+
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.quote.update({
-        where: { id },
-        data: { status: 'APROVADO' },
-        include: QUOTE_INCLUDE,
-      });
-      await tx.quoteHistory.create({
-        data: { quoteId: id, status: 'APROVADO', note: 'Orçamento aprovado' },
-      });
+      let updated: QuoteWithRelations;
 
-      // V3 §28: orçamento aprovado → cria o serviço automaticamente,
-      // reaproveitando cliente, obra, prazo e valor total.
-      const lastOrder = await tx.serviceOrder.findFirst({
-        where: { companyId },
-        orderBy: { code: 'desc' },
-        select: { code: true },
-      });
-      const code = (lastOrder?.code ?? 0) + 1;
-      await tx.serviceOrder.create({
-        data: {
-          companyId,
+      if (!alreadyApproved) {
+        updated = await tx.quote.update({
+          where: { id },
+          data: { status: 'APROVADO' },
+          include: QUOTE_INCLUDE,
+        });
+        await tx.quoteHistory.create({
+          data: { quoteId: id, status: 'APROVADO', note: 'Orçamento aprovado' },
+        });
+      } else {
+        // quote já está no formato correto (convertDecimals aplicado por findOne)
+        updated = quote as unknown as QuoteWithRelations;
+      }
+
+      // Criar ou retornar ServiceOrder existente (idempotente)
+      const { serviceOrder, created: serviceOrderCreated } =
+        await this.ensureServiceOrderFromQuote(tx, companyId, {
+          id: updated.id,
           clientId: updated.clientId,
-          workId: updated.workId ?? undefined,
-          quoteId: id,
-          code,
-          status: 'PENDENTE',
-          scheduledDate: updated.startDate
-            ? new Date(updated.startDate)
-            : undefined,
-          saleValue: Number(updated.total),
-          observations: updated.observations ?? undefined,
-        },
-      });
-      await tx.quote.update({
-        where: { id },
-        data: { convertedAt: new Date() },
-      });
+          workId: updated.workId,
+          startDate: updated.startDate,
+          total: updated.total,
+          observations: updated.observations,
+        });
 
-      return this.convertDecimals(updated);
+      return {
+        quote: this.convertDecimals(updated),
+        serviceOrder: this.convertServiceOrderDecimals(serviceOrder),
+        serviceOrderCreated,
+      };
     });
   }
 
@@ -432,9 +477,9 @@ export class QuotesService {
   }
 
   /**
-   * Converte um orçamento APROVADO em ordem de serviço, reaproveitando
-   * cliente, obra, observações, prazo (startDate) e valor total do orçamento.
-   * Marca o orçamento como convertido (convertedAt) — 409 se já convertido.
+   * Converte um orçamento APROVADO em ordem de serviço.
+   * @deprecated Use POST /quotes/:id/approve (idempotente). Este endpoint será
+   * removido em versão futura. Mantido temporariamente para compatibilidade.
    */
   async convertToService(companyId: string, id: string) {
     const quote = await this.prisma.quote.findFirst({
@@ -442,55 +487,29 @@ export class QuotesService {
       include: QUOTE_INCLUDE,
     });
     if (!quote) throw new NotFoundException('Orçamento não encontrado');
-    if (quote.convertedAt) {
-      throw new ConflictException('Orçamento já convertido em serviço');
-    }
     if (quote.status !== 'APROVADO') {
       throw new BadRequestException(
         'Somente orçamentos aprovados podem ser convertidos em serviço',
       );
     }
 
-    const serviceOrder = await this.prisma.$transaction(async (tx) => {
-      const lastOrder = await tx.serviceOrder.findFirst({
-        where: { companyId },
-        orderBy: { code: 'desc' },
-        select: { code: true },
-      });
-      const code = (lastOrder?.code ?? 0) + 1;
-
-      const created = await tx.serviceOrder.create({
-        data: {
-          companyId,
+    const { serviceOrder, created } = await this.prisma.$transaction(
+      async (tx) => {
+        return this.ensureServiceOrderFromQuote(tx, companyId, {
+          id: quote.id,
           clientId: quote.clientId,
-          workId: quote.workId ?? undefined,
-          quoteId: quote.id,
-          code,
-          status: 'PENDENTE',
-          scheduledDate: quote.startDate
-            ? new Date(quote.startDate)
-            : undefined,
-          saleValue: Number(quote.total),
-          observations: quote.observations ?? undefined,
-        },
-        include: SERVICE_ORDER_INCLUDE,
-      });
-
-      // Marca como convertido de forma atômica (evita conversão dupla em corrida).
-      const marked = await tx.quote.updateMany({
-        where: { id: quote.id, convertedAt: null },
-        data: { convertedAt: new Date() },
-      });
-      if (marked.count === 0) {
-        throw new ConflictException('Orçamento já convertido em serviço');
-      }
-
-      return created;
-    });
+          workId: quote.workId,
+          startDate: quote.startDate,
+          total: quote.total,
+          observations: quote.observations,
+        });
+      },
+    );
 
     return {
       serviceOrderId: serviceOrder.id,
       ...this.convertServiceOrderDecimals(serviceOrder),
+      created,
     };
   }
 
