@@ -147,6 +147,23 @@ export class QuotesService {
   async update(companyId: string, id: string, dto: UpdateQuoteDto) {
     const existing = await this.findOne(companyId, id);
 
+    // Verificar se existe uma versão mais recente (proteção do original)
+    const latestVersion = await this.prisma.quote.findFirst({
+      where: {
+        companyId,
+        quoteNumber: existing.quoteNumber,
+        deletedAt: null,
+      },
+      orderBy: { version: 'desc' },
+      select: { version: true, id: true },
+    });
+
+    if (latestVersion && latestVersion.version > existing.version) {
+      throw new BadRequestException(
+        `Não é possível alterar orçamento v${existing.version}: já existe versão mais recente (v${latestVersion.version})`,
+      );
+    }
+
     if (dto.clientId) {
       await this.ensureClientBelongsToCompany(companyId, dto.clientId);
     }
@@ -234,7 +251,25 @@ export class QuotesService {
   }
 
   async remove(companyId: string, id: string) {
-    await this.findOne(companyId, id);
+    const existing = await this.findOne(companyId, id);
+
+    // Verificar se existe uma versão mais recente (proteção do original)
+    const latestVersion = await this.prisma.quote.findFirst({
+      where: {
+        companyId,
+        quoteNumber: existing.quoteNumber,
+        deletedAt: null,
+      },
+      orderBy: { version: 'desc' },
+      select: { version: true, id: true },
+    });
+
+    if (latestVersion && latestVersion.version > existing.version) {
+      throw new BadRequestException(
+        `Não é possível excluir orçamento v${existing.version}: já existe versão mais recente (v${latestVersion.version})`,
+      );
+    }
+
     return this.prisma.quote.update({
       where: { id },
       data: { deletedAt: new Date() },
@@ -244,15 +279,50 @@ export class QuotesService {
   async createVersion(companyId: string, id: string) {
     const original = await this.findOne(companyId, id);
 
-    const nextQuoteNumber = await this.getNextQuoteNumber(companyId);
+    // Verificar se já existe uma versão mais recente (proteção contra concorrência)
+    const latestVersion = await this.prisma.quote.findFirst({
+      where: {
+        companyId,
+        quoteNumber: original.quoteNumber,
+        deletedAt: null,
+      },
+      orderBy: { version: 'desc' },
+      select: { version: true, id: true },
+    });
+
+    // Se existe uma versão mais recente que não é a original, usar ela como base
+    // Isso garante que sempre criamos a próxima versão a partir da mais atual
+    if (latestVersion && latestVersion.version > original.version) {
+      throw new BadRequestException(
+        `Já existe uma versão mais recente (v${latestVersion.version}) para este orçamento`,
+      );
+    }
+
     const nextVersion = original.version + 1;
+
+    // Verificar se já existe esta versão (pode ter sido criada por outra requisição)
+    const existingVersion = await this.prisma.quote.findFirst({
+      where: {
+        companyId,
+        quoteNumber: original.quoteNumber,
+        version: nextVersion,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (existingVersion) {
+      throw new BadRequestException(
+        `A versão ${nextVersion} já foi criada para este orçamento`,
+      );
+    }
 
     return this.prisma.quote.create({
       data: {
         companyId,
         clientId: original.clientId,
         workId: original.workId,
-        quoteNumber: nextQuoteNumber,
+        quoteNumber: original.quoteNumber, // Mantém o mesmo número
         version: nextVersion,
         status: 'RASCUNHO',
         subtotal: original.subtotal,
