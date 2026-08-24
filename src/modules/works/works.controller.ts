@@ -14,9 +14,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { WorksService } from './works.service';
+/** @deprecated DTO legado — mantido para compatibilidade. */
 import { CreateWorkDto } from './dto/create-work.dto';
+/** @deprecated DTO legado — mantido para compatibilidade. */
 import { UpdateWorkDto } from './dto/update-work.dto';
 
+/**
+ * @deprecated Endpoint legado de gerenciamento de Obras (Works).
+ * Mantido para compatibilidade — não utilizar em novos fluxos.
+ */
 @ApiTags('works')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, ActiveCompanyGuard)

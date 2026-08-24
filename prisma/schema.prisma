@@ -132,6 +132,7 @@ model Company {
   serviceReturns        ServiceReturn[]
   quoteFollowUps        QuoteFollowUp[]
   featureOverrides      CompanyFeatureOverride[]
+  serviceReceivables    ServiceReceivable[]
 }
 
 // ─── ETAPA 4 — Numeração concorrente segura ────────────────────────────────
@@ -819,6 +820,7 @@ model ServiceOrder {
   purchaseOrders     PurchaseOrder[]
   serviceWarranties  ServiceWarranty[]
   serviceReturns     ServiceReturn[]
+  receivables        ServiceReceivable[]
 
   @@unique([companyId, code])
   @@unique([companyId, quoteId])
@@ -1261,4 +1263,53 @@ model CompanyFeatureOverride {
 
   @@unique([companyId, feature])
   @@index([companyId])
+}
+
+// ─── ETAPA 14 — Recebíveis e Parcelas ─────────────────────────────────────────
+
+enum ServiceReceivableStatus {
+  PENDING
+  RECEIVED
+  PARTIAL
+}
+
+enum ReceivableInstallmentStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+model ServiceReceivable {
+  id             String                   @id @default(uuid()) @db.Char(36)
+  companyId      String                   @db.Char(36)
+  serviceOrderId String                   @db.Char(36)
+  total          Decimal                  @db.Decimal(15, 2)
+  status         ServiceReceivableStatus  @default(PENDING)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  company        Company                  @relation(fields: [companyId], references: [id])
+  serviceOrder   ServiceOrder             @relation(fields: [serviceOrderId], references: [id])
+  installments   ReceivableInstallment[]
+
+  @@index([companyId, serviceOrderId])
+  @@index([companyId])
+  @@index([serviceOrderId])
+}
+
+model ReceivableInstallment {
+  id                String                        @id @default(uuid()) @db.Char(36)
+  receivableId      String                        @db.Char(36)
+  installmentNumber Int
+  amount            Decimal                       @db.Decimal(15, 2)
+  dueDate           DateTime
+  status            ReceivableInstallmentStatus   @default(PENDING)
+  paidAt            DateTime?
+  paymentId         String?                       @db.Char(36)
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  receivable        ServiceReceivable             @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+
+  @@index([receivableId])
 }

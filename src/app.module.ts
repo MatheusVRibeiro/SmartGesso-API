@@ -40,6 +40,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
+import { ServiceReceivablesModule } from './modules/service-receivables/service-receivables.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.
     AttachmentsModule,
     SuppliersModule,
     PurchaseOrdersModule,
+    ServiceReceivablesModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

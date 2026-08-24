@@ -72,7 +72,6 @@ export class PaymentsService {
 
       return this.convertDecimals(payment);
     } catch (error) {
-      console.error('PAYMENT CREATE ERROR:', error);
       throw error;
     }
   }
