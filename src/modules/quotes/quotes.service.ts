@@ -1,12 +1,15 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, QuoteStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CompanySequenceService, SEQUENCE_TYPES } from '../core/services/company-sequence.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../notifications/push.service';
 import { CreateQuoteDto, QuoteItemDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
 import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination.dto';
@@ -45,10 +48,14 @@ function parseDateInput(value?: string | null): Date | undefined {
 
 @Injectable()
 export class QuotesService {
+  private readonly logger = new Logger(QuotesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequenceService: CompanySequenceService,
     private readonly auditLogService: AuditLogService,
+    private readonly notificationsService: NotificationsService,
+    private readonly pushService: PushService,
   ) {}
 
   async create(companyId: string, dto: CreateQuoteDto) {
@@ -490,6 +497,31 @@ export class QuotesService {
       },
     });
 
+    // Notificação + push (não deve quebrar a aprovação em caso de falha)
+    try {
+      await this.notificationsService.create(companyId, {
+        type: 'QUOTE_APPROVED',
+        title: 'Orçamento aprovado',
+        body: `Orçamento #${result.quote.quoteNumber} aprovado — Serviço criado`,
+        data: {
+          quoteId: result.quote.id,
+          quoteNumber: result.quote.quoteNumber,
+          serviceOrderId: result.serviceOrder.id,
+        },
+      });
+      await this.pushService.sendToCompany(companyId, {
+        title: 'Orçamento aprovado',
+        body: `Orçamento #${result.quote.quoteNumber} aprovado — Serviço criado`,
+        data: { route: `/servicos/${result.serviceOrder.id}` },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao notificar aprovação do orçamento ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     return result;
   }
 
@@ -535,6 +567,27 @@ export class QuotesService {
         note: note ?? 'Orçamento não aprovado',
       },
     });
+
+    // Notificação + push (não deve quebrar a rejeição em caso de falha)
+    try {
+      await this.notificationsService.create(companyId, {
+        type: 'QUOTE_REJECTED',
+        title: 'Orçamento rejeitado',
+        body: `Orçamento #${result.quoteNumber} rejeitado`,
+        data: { quoteId: id, quoteNumber: result.quoteNumber },
+      });
+      await this.pushService.sendToCompany(companyId, {
+        title: 'Orçamento rejeitado',
+        body: `Orçamento #${result.quoteNumber} rejeitado`,
+        data: { route: `/orcamentos/${id}` },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao notificar rejeição do orçamento ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
     return result;
   }
