@@ -12,6 +12,7 @@ import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { PrismaService } from '../../database/prisma.service';
 import { PerformanceService } from './performance.service';
+import { DashboardOverviewService } from './dashboard-overview.service';
 
 @ApiTags('company-dashboard')
 @ApiBearerAuth()
@@ -21,7 +22,17 @@ export class CompanyDashboardController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly performanceService: PerformanceService,
+    private readonly overviewService: DashboardOverviewService,
   ) {}
+
+  @Get('overview')
+  @ApiOperation({
+    summary:
+      'Visão geral consolidada da Dashboard (financeiro, metas, agenda, alertas e gráficos)',
+  })
+  async overview(@Req() r: any) {
+    return this.overviewService.getOverview(r.company.id);
+  }
 
   @Get('performance')
   @ApiOperation({
