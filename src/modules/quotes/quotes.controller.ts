@@ -46,6 +46,12 @@ export class QuotesController {
     return this.quotesService.findAll(r.company.id, pagination, search, status);
   }
 
+  @Get('by-token/:token')
+  @ApiOperation({ summary: 'Busca orçamento pelo token público (deep link)' })
+  findByToken(@Req() r: any, @Param('token') token: string) {
+    return this.quotesService.findByCompanyToken(r.company.id, token);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Busca orçamento por ID' })
   findOne(@Req() r: any, @Param('id') id: string) {

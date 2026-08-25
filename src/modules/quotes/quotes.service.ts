@@ -647,7 +647,6 @@ export class QuotesService {
         items: true,
       },
     });
-
     if (!quote) {
       throw new NotFoundException('Orçamento não encontrado');
     }
@@ -677,6 +676,32 @@ export class QuotesService {
         total: Number(item.total),
       })),
     };
+  }
+
+  /**
+   * Busca orçamento pelo token público DENTRO da empresa autenticada
+   * (deep link no app: o usuário logado abre o link e o app localiza o
+   * orçamento pelo token). Verifica companyId para manter tenant isolation.
+   */
+  async findByCompanyToken(companyId: string, token: string) {
+    const quote = await this.prisma.quote.findFirst({
+      where: { publicToken: token, companyId, deletedAt: null },
+      include: {
+        client: { select: { id: true, name: true } },
+        items: true,
+      },
+    });
+
+    if (!quote) {
+      throw new NotFoundException('Orçamento não encontrado para este token');
+    }
+
+    const now = new Date();
+    if (quote.validUntil && quote.validUntil.getTime() <= now.getTime()) {
+      throw new GoneException('Link do orçamento expirado');
+    }
+
+    return quote;
   }
 
   /**

@@ -35,6 +35,12 @@ export class NotificationsController {
     );
   }
 
+  /** GET /notifications/unread-count — quantidade de não lidas (badge). */
+  @Get('unread-count')
+  unreadCount(@Req() r: any) {
+    return this.notificationsService.unreadCount(r.company.id);
+  }
+
   /** GET /notifications — lista as notificações da empresa ativa. */
   @Get()
   list(@Req() r: any, @Query('limit') limit?: string) {
