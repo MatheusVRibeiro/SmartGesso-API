@@ -36,7 +36,12 @@ describe('ServiceAdditionalsService', () => {
     sequenceService = {
       increment: jest.fn(),
     };
-    service = new ServiceAdditionalsService(prisma, sequenceService);
+    service = new ServiceAdditionalsService(
+      prisma,
+      sequenceService,
+      { create: jest.fn().mockResolvedValue({}) } as any,
+      { sendToCompany: jest.fn().mockResolvedValue({ sent: 0 }), create: jest.fn().mockResolvedValue({}) } as any,
+    );
   });
 
   // ── Helpers ──────────────────────────────────────────────

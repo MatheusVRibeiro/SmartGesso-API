@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, ServiceAdditionalStatus } from '@prisma/client';
@@ -9,6 +10,9 @@ import {
   CompanySequenceService,
   SEQUENCE_TYPES,
 } from '../core/services/company-sequence.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../notifications/push.service';
+import { formatCurrency } from '../../common/utils/format-currency';
 import { CreateServiceAdditionalDto } from './dto/create-service-additional.dto';
 import { UpdateServiceAdditionalDto } from './dto/update-service-additional.dto';
 
@@ -44,9 +48,13 @@ const STATUS_TRANSITIONS: Record<
 
 @Injectable()
 export class ServiceAdditionalsService {
+  private readonly logger = new Logger(ServiceAdditionalsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequenceService: CompanySequenceService,
+    private readonly notificationsService: NotificationsService,
+    private readonly pushService: PushService,
   ) {}
 
   /** Lista todos os aditivos de uma ordem de serviço (tenant-scoped). */
@@ -167,6 +175,30 @@ export class ServiceAdditionalsService {
       data,
       include: ADDITIONAL_INCLUDE,
     });
+
+    // Notificação + push quando o aditivo é aprovado
+    if (status === 'APPROVED') {
+      try {
+        const body = `Aditivo ${updated.code ?? id} aprovado (${formatCurrency(Number(updated.amount))})`;
+        await this.notificationsService.create(companyId, {
+          type: 'ADDITIONAL_APPROVED',
+          title: 'Aditivo aprovado',
+          body,
+          data: { serviceOrderId, route: `/servicos/${serviceOrderId}` },
+        });
+        await this.pushService.sendToCompany(companyId, {
+          title: 'Aditivo aprovado',
+          body,
+          data: { route: `/servicos/${serviceOrderId}` },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Falha ao notificar aditivo aprovado ${id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
 
     return this.convertDecimals(updated);
   }

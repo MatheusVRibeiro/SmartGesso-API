@@ -1,15 +1,22 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../notifications/push.service';
+import { formatCurrency } from '../../common/utils/format-currency';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 
 @Injectable()
 export class ExpensesService {
+  private readonly logger = new Logger(ExpensesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly notificationsService: NotificationsService,
+    private readonly pushService: PushService,
   ) {}
 
   async create(companyId: string, dto: CreateExpenseDto, userId?: string) {
@@ -44,6 +51,28 @@ export class ExpensesService {
         description: dto.description,
       },
     });
+
+    // Notificação + push (não deve quebrar a criação em caso de falha)
+    try {
+      const body = `Despesa de ${formatCurrency(Number(expense.amount))} registrada`;
+      await this.notificationsService.create(companyId, {
+        type: 'EXPENSE_CREATED',
+        title: 'Despesa registrada',
+        body,
+        data: { expenseId: expense.id, route: '/despesas' },
+      });
+      await this.pushService.sendToCompany(companyId, {
+        title: 'Despesa registrada',
+        body,
+        data: { route: '/despesas' },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao notificar despesa ${expense.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
     return expense;
   }

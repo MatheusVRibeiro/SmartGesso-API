@@ -1,12 +1,26 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { formatCurrency } from '../../common/utils/format-currency';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../notifications/push.service';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateInstallmentDto } from './dto/update-installment.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class ServiceReceivablesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ServiceReceivablesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+    private readonly pushService: PushService,
+  ) {}
 
   async generateReceivables(serviceOrderId: string, companyId: string, dto: CreateReceivableDto) {
     const serviceOrder = await this.prisma.serviceOrder.findFirst({
@@ -148,6 +162,31 @@ export class ServiceReceivablesService {
         status: receivableStatus as any,
       },
     });
+
+    // Recebível integralmente recebido → notificação + push (não deve
+    // quebrar a atualização em caso de falha)
+    if (receivableStatus === 'RECEIVED') {
+      try {
+        const body = `Pagamento de ${formatCurrency(receivable.total)} recebido`;
+        await this.notificationsService.create(companyId, {
+          type: 'PAYMENT_RECEIVED',
+          title: 'Pagamento recebido',
+          body,
+          data: { receivableId, route: '/pagamentos' },
+        });
+        await this.pushService.sendToCompany(companyId, {
+          title: 'Pagamento recebido',
+          body,
+          data: { route: '/pagamentos' },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Falha ao notificar recebível recebido ${receivableId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
 
     return updatedInstallment;
   }

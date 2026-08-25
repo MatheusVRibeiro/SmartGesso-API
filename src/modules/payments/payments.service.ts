@@ -1,6 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { formatCurrency } from '../../common/utils/format-currency';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../notifications/push.service';
 import { CreatePaymentDto, CreatePaymentInstallmentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 
@@ -23,7 +31,13 @@ const MAX_INSTALLMENTS = 12;
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PaymentsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+    private readonly pushService: PushService,
+  ) {}
 
   async create(companyId: string, dto: CreatePaymentDto) {
     try {
@@ -143,11 +157,12 @@ export class PaymentsService {
   }
 
   /** Marca uma parcela como CONFIRMADO (paidDate = now). Se TODAS as parcelas
-   *  estiverem pagas, o recebimento pai também vira CONFIRMADO. */
+   *  estiverem pagas, o recebimento pai também vira CONFIRMADO.
+   *  Dispara notificação + push "Pagamento recebido" para a empresa. */
   async payInstallment(companyId: string, paymentId: string, installmentId: string) {
     const payment = await this.prisma.payment.findFirst({
       where: { id: paymentId, companyId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, amount: true },
     });
     if (!payment) throw new NotFoundException('Recebimento não encontrado');
 
@@ -176,6 +191,28 @@ export class PaymentsService {
           });
         }
       });
+
+      // Notificação + push (não deve quebrar a confirmação em caso de falha)
+      try {
+        const body = `Pagamento de ${formatCurrency(payment.amount)} recebido`;
+        await this.notificationsService.create(companyId, {
+          type: 'PAYMENT_RECEIVED',
+          title: 'Pagamento recebido',
+          body,
+          data: { paymentId, route: '/pagamentos' },
+        });
+        await this.pushService.sendToCompany(companyId, {
+          title: 'Pagamento recebido',
+          body,
+          data: { route: '/pagamentos' },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Falha ao notificar pagamento recebido ${paymentId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
 
     return this.findOne(companyId, paymentId);

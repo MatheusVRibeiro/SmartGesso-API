@@ -37,7 +37,11 @@ describe('ServiceReceivablesService', () => {
         update: jest.fn(),
       },
     };
-    service = new ServiceReceivablesService(prisma);
+    service = new ServiceReceivablesService(
+      prisma,
+      { create: jest.fn().mockResolvedValue({}) } as any,
+      { sendToCompany: jest.fn().mockResolvedValue({ sent: 0 }), create: jest.fn().mockResolvedValue({}) } as any,
+    );
   });
 
   // ── Helpers ──────────────────────────────────────────────
