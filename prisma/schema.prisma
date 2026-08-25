@@ -133,6 +133,7 @@ model Company {
   quoteFollowUps        QuoteFollowUp[]
   featureOverrides      CompanyFeatureOverride[]
   serviceReceivables    ServiceReceivable[]
+  companyGoals          CompanyGoal[]
 }
 
 // ─── ETAPA 4 — Numeração concorrente segura ────────────────────────────────
@@ -297,6 +298,7 @@ model User {
   pushTokens      PushToken[]
   createdServiceAdditionals ServiceAdditional[] @relation("CreatedServiceAdditionals")
   createdQuoteFollowUps     QuoteFollowUp[]     @relation("CreatedQuoteFollowUps")
+  createdCompanyGoals       CompanyGoal[]       @relation("CreatedCompanyGoals")
   attachments               Attachment[]
   updatedFeatureOverrides   CompanyFeatureOverride[] @relation("UpdatedCompanyFeatureOverrides")
 }
@@ -646,6 +648,8 @@ model Quote {
   measurementDate DateTime?
   warrantyDays    Int?
   validUntil      DateTime?
+  publicToken     String?            @unique
+  sharedAt        DateTime?
   observations    String?            @db.Text
   convertedAt     DateTime?
   createdAt       DateTime           @default(now())
@@ -1313,4 +1317,25 @@ model ReceivableInstallment {
   receivable        ServiceReceivable             @relation(fields: [receivableId], references: [id], onDelete: Cascade)
 
   @@index([receivableId])
+}
+
+// ─── Metas mensais por empresa (Metas e Performance) ────────────────────────
+
+model CompanyGoal {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  companyId          String   @db.Char(36)
+  year               Int
+  month              Int
+  targetQuoteAmount  Decimal  @db.Decimal(15, 2)
+  targetRevenue      Decimal  @db.Decimal(15, 2)
+  targetApprovedQuotes Int
+  createdById        String?  @db.Char(36)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User?   @relation("CreatedCompanyGoals", fields: [createdById], references: [id])
+
+  @@unique([companyId, year, month])
+  @@index([companyId])
 }

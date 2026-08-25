@@ -67,6 +67,7 @@ export const ROLE_PERMISSIONS: Record<CompanyUserRole, string[]> = {
     'inventory.adjust',
     'reports.read',
     'reports.export',
+    'company_goals.manage',
   ],
   MANAGER: [
     'company.read',
@@ -119,6 +120,7 @@ export const ROLE_PERMISSIONS: Record<CompanyUserRole, string[]> = {
     'inventory.adjust',
     'reports.read',
     'reports.export',
+    'company_goals.manage',
   ],
   SALES: [
     'company.read',

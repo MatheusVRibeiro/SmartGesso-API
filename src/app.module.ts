@@ -25,6 +25,7 @@ import { PlatformCompaniesModule } from './modules/platform-companies/platform-c
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { WorksModule } from './modules/works/works.module';
 import { QuotesModule } from './modules/quotes/quotes.module';
+import { QuotesPublicModule } from './modules/quotes/quotes-public.module';
 import { QuoteEnvironmentsModule } from './modules/quote-environments/quote-environments.module';
 import { ProductionOrdersModule } from './modules/production-orders/production-orders.module';
 import { ServiceOrdersModule } from './modules/service-orders/service-orders.module';
@@ -43,6 +44,7 @@ import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
 import { ServiceReceivablesModule } from './modules/service-receivables/service-receivables.module';
+import { GoalsModule } from './modules/goals/goals.module';
 
 @Module({
   imports: [
@@ -69,6 +71,7 @@ import { ServiceReceivablesModule } from './modules/service-receivables/service-
     MeasurementsModule,
     CompositionsModule,
     QuotesModule,
+    QuotesPublicModule,
     QuoteEnvironmentsModule,
     ProductionOrdersModule,
     ServiceOrdersModule,
@@ -84,6 +87,7 @@ import { ServiceReceivablesModule } from './modules/service-receivables/service-
     SuppliersModule,
     PurchaseOrdersModule,
     ServiceReceivablesModule,
+    GoalsModule,
     AuditLogModule,
   ],
   providers: [
