@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { WorksService } from './works.service';
 /** @deprecated DTO legado — mantido para compatibilidade. */
 import { CreateWorkDto } from './dto/create-work.dto';
@@ -25,7 +26,7 @@ import { UpdateWorkDto } from './dto/update-work.dto';
  */
 @ApiTags('works')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
 @Controller('works')
 export class WorksController {
   constructor(private readonly worksService: WorksService) {}

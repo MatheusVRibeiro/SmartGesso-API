@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { CompanyMembersService } from './company-members.service';
 import { InviteMemberDto, UpdateMemberDto } from './dto';
 
@@ -21,7 +22,7 @@ import { InviteMemberDto, UpdateMemberDto } from './dto';
  */
 @ApiTags('company-members')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
 @Controller('company')
 export class CompanyMembersController {
   constructor(private readonly members: CompanyMembersService) {}
