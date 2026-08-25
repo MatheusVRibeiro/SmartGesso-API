@@ -22,6 +22,7 @@ import { QuotesService } from './quotes.service';
 import { QuotesPdfService } from './quotes-pdf.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
+import { CreatePublicShareDto } from './dto/create-public-share.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 @ApiTags('quotes')
@@ -108,6 +109,15 @@ export class QuotesController {
   })
   duplicate(@Req() r: any, @Param('id') id: string) {
     return this.quotesService.duplicate(r.company.id, id);
+  }
+
+  @Post(':id/share')
+  @ApiOperation({
+    summary:
+      'Cria deep link público do orçamento (token + URL). Idempotente: reutiliza o token se já existir.',
+  })
+  share(@Req() r: any, @Param('id') id: string, @Body() dto: CreatePublicShareDto) {
+    return this.quotesService.share(r.company.id, id, dto);
   }
 
   @Get(':id/pdf')

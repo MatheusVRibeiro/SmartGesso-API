@@ -9,5 +9,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
   imports: [AuditLogModule, NotificationsModule],
   controllers: [QuotesController],
   providers: [QuotesService, QuotesPdfService],
+  exports: [QuotesService],
 })
 export class QuotesModule {}

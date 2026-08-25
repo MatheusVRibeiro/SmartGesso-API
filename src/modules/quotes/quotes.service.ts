@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  GoneException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { Prisma, QuoteStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CompanySequenceService, SEQUENCE_TYPES } from '../core/services/company-sequence.service';
@@ -12,6 +14,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PushService } from '../notifications/push.service';
 import { CreateQuoteDto, QuoteItemDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
+import { CreatePublicShareDto } from './dto/create-public-share.dto';
 import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { paginate } from '../../common/utils/paginate';
 
@@ -590,6 +593,198 @@ export class QuotesService {
     }
 
     return result;
+  }
+
+  /**
+   * Cria o deep link público do orçamento (token aleatório de 32 bytes).
+   * Atualiza publicToken + sharedAt e define validUntil (+7 dias) quando
+   * ainda não definido. Reaproveitar o mesmo token: o share é idempotente
+   * — se o orçamento já tem publicToken, retorna o link existente.
+   */
+  async share(companyId: string, id: string, dto?: CreatePublicShareDto) {
+    const quote = await this.findOne(companyId, id);
+
+    if (quote.publicToken) {
+      return {
+        publicToken: quote.publicToken,
+        url: `https://app.smartgesso.com.br/o/${quote.publicToken}`,
+      };
+    }
+
+    const publicToken = randomBytes(32).toString('hex');
+    const expiryDays = dto?.expiryDays ?? 7;
+    const validUntil = quote.validUntil
+      ? quote.validUntil
+      : new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
+
+    const updated = await this.prisma.quote.update({
+      where: { id },
+      data: { publicToken, sharedAt: new Date(), validUntil },
+    });
+
+    return {
+      publicToken: updated.publicToken,
+      url: `https://app.smartgesso.com.br/o/${updated.publicToken}`,
+    };
+  }
+
+  /**
+   * Busca os dados PÚBLICOS do orçamento pelo token (sem autenticação).
+   *
+   * Validações:
+   *  - token inexistente ou orçamento excluído → 404 (não revela se existe)
+   *  - validUntil vencido → 410 Gone (link expirado)
+   *
+   * Nunca expõe dados sensíveis: sem companyId, sem CPF/documento,
+   * sem observações internas, sem endereço completo do local.
+   */
+  async findPublicByToken(token: string) {
+    const quote = await this.prisma.quote.findFirst({
+      where: { publicToken: token, deletedAt: null },
+      include: {
+        client: { select: { name: true } },
+        work: { select: { name: true } },
+        items: true,
+      },
+    });
+
+    if (!quote) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+
+    const now = new Date();
+    if (quote.validUntil && quote.validUntil.getTime() <= now.getTime()) {
+      throw new GoneException('Link do orçamento expirado');
+    }
+
+    return {
+      quoteNumber: quote.quoteNumber,
+      version: quote.version,
+      status: quote.status,
+      total: Number(quote.total),
+      paymentMethod: quote.paymentMethod,
+      paymentTerms: quote.paymentTerms,
+      validUntil: quote.validUntil,
+      client: { name: quote.client.name },
+      work: quote.work ? { name: quote.work.name } : null,
+      items: quote.items.map((item) => ({
+        itemType: item.itemType,
+        name: item.name,
+        description: item.description,
+        quantity: Number(item.quantity),
+        unit: item.unit,
+        unitPrice: Number(item.unitPrice),
+        total: Number(item.total),
+      })),
+    };
+  }
+
+  /**
+   * Aprovação pública via deep link: mesma lógica de approve(), usando o
+   * companyId do próprio orçamento (o token já identifica a empresa).
+   * Cria notificação + push para o gestor ("Cliente aprovou pelo link").
+   */
+  async approvePublicByToken(token: string, ip?: string) {
+    const quote = await this.prisma.quote.findFirst({
+      where: { publicToken: token, deletedAt: null },
+      select: { id: true, companyId: true, validUntil: true, status: true },
+    });
+
+    if (!quote) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+
+    const now = new Date();
+    if (quote.validUntil && quote.validUntil.getTime() <= now.getTime()) {
+      throw new GoneException('Link do orçamento expirado');
+    }
+
+    const result = await this.approve(quote.companyId, quote.id);
+
+    // Notificação + push específicas do deep link (não deve quebrar a aprovação)
+    try {
+      await this.notificationsService.create(quote.companyId, {
+        type: 'QUOTE_APPROVED',
+        title: 'Cliente aprovou pelo link',
+        body: `Orçamento #${result.quote.quoteNumber} aprovado pelo cliente via deep link`,
+        data: {
+          quoteId: result.quote.id,
+          quoteNumber: result.quote.quoteNumber,
+          serviceOrderId: result.serviceOrder.id,
+          source: 'deep-link',
+        },
+      });
+      await this.pushService.sendToCompany(quote.companyId, {
+        title: 'Cliente aprovou pelo link',
+        body: `Orçamento #${result.quote.quoteNumber} aprovado pelo cliente via deep link`,
+        data: { route: `/servicos/${result.serviceOrder.id}` },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao notificar aprovação pública do orçamento ${quote.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    await this.auditLogService.log({
+      companyId: quote.companyId,
+      action: 'APPROVE_PUBLIC',
+      entity: 'Quote',
+      entityId: quote.id,
+      details: {
+        quoteNumber: result.quote.quoteNumber,
+        source: 'deep-link',
+        ip: ip ?? null,
+      },
+    });
+
+    return {
+      status: result.quote.status,
+      serviceOrderId: result.serviceOrder.id,
+      serviceOrderCreated: result.serviceOrderCreated,
+    };
+  }
+
+  /**
+   * Rejeição pública via deep link: mesma lógica de reject(), usando o
+   * companyId do próprio orçamento. A nota é obrigatória (validada no DTO).
+   */
+  async rejectPublicByToken(token: string, note: string) {
+    const trimmedNote = note?.trim();
+    if (!trimmedNote) {
+      throw new BadRequestException('A nota de rejeição é obrigatória');
+    }
+
+    const quote = await this.prisma.quote.findFirst({
+      where: { publicToken: token, deletedAt: null },
+      select: { id: true, companyId: true, validUntil: true, status: true },
+    });
+
+    if (!quote) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+
+    const now = new Date();
+    if (quote.validUntil && quote.validUntil.getTime() <= now.getTime()) {
+      throw new GoneException('Link do orçamento expirado');
+    }
+
+    const result = await this.reject(quote.companyId, quote.id, trimmedNote);
+
+    await this.auditLogService.log({
+      companyId: quote.companyId,
+      action: 'REJECT_PUBLIC',
+      entity: 'Quote',
+      entityId: quote.id,
+      details: {
+        quoteNumber: result.quoteNumber,
+        source: 'deep-link',
+        note: trimmedNote,
+      },
+    });
+
+    return { status: result.status, quoteNumber: result.quoteNumber };
   }
 
   /** Duplica o orçamento: novo quoteNumber, status RASCUNHO, copia itens/local/prazo. */
