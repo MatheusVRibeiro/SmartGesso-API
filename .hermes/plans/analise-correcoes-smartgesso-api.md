@@ -75,9 +75,9 @@ Analisar a API SmartGesso (segurança, qualidade, schema/DB) e corrigir os achad
 
 ## Fase 2 — Correções (em andamento)
 - [x] Lote 0 (lint): 23 erros → 0 + @ts-nocheck eliminado (commit b2f9375)
-- [ ] Lote 1: críticos C1-C4 (4 subagents)
-- [ ] Lote 2: altos A1-A5
-- [ ] Lote 3: médios priorizados
+- [x] Lote 1: críticos C1-C4 — **commit 023129b** (IDOR, escalação, SSRF, path traversal) + altos A1/A3/A4/A5 + médios M3/M4/M5/M6/M12 + código morto
+- [ ] Lote 2: A2 (matriz permissões em ~40 rotas), A6 (quotes.service god file), A7 (convertDecimals), A8 (business DTOs)
+- [ ] Lote 3: M1/M2 (tokenRef), M7 (índices schema), M8 (enums status)
 - [ ] Validação final: typecheck + lint + tests + build
 - [ ] Commit PT-BR
 
