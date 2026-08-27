@@ -1,10 +1,8 @@
 import {
   IsBoolean,
-  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
-  Min,
 } from 'class-validator';
 
 /** DTO para criação de retorno de ordem de serviço (ServiceReturn). */

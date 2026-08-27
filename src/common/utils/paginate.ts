@@ -1,12 +1,16 @@
 import { PaginationDto, PaginatedResponseDto } from '../dto/pagination.dto';
-import { PrismaService } from '../../database/prisma.service';
 
 /**
  * Paginação genérica para entidades Prisma.
  * Usage: await paginate(prisma.quote, { companyId }, paginationDto, { createdAt: 'desc' });
  */
+type FindManyCount = {
+  findMany: (args?: any) => Promise<any>;
+  count: (args?: any) => Promise<number>;
+};
+
 export async function paginate<T>(
-  prisma: { findMany: Function; count: Function },
+  prisma: FindManyCount,
   where: Record<string, any>,
   pagination: PaginationDto,
   orderBy?: Record<string, 'asc' | 'desc'>,

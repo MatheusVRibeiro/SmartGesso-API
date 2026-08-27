@@ -51,21 +51,6 @@ describe('CompanySequenceService (concorrência — ETAPA 4 V4)', () => {
     return { mock, counters };
   }
 
-  /** Mock simples (sem lock) para testes que não precisam de concorrência. */
-  function createSimpleMock(currentValue = 0) {
-    let value = currentValue;
-    const mock: any = {
-      companySequence: {
-        upsert: jest.fn().mockImplementation(async () => {
-          value += 1;
-          return { currentValue: value };
-        }),
-      },
-      $transaction: jest.fn(async (fn: (t: any) => any) => fn(mock)),
-    };
-    return mock;
-  }
-
   describe('increment', () => {
     it('retorna o valor incrementado atomicamente', async () => {
       const { mock } = createAtomicMock();

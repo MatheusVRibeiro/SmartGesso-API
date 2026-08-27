@@ -1,4 +1,3 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AttachmentsService } from '../src/modules/attachments/attachments.service';

@@ -45,7 +45,7 @@ export class LoggingInterceptor implements NestInterceptor {
     const sanitizedBody = this.sanitizeData(request.body);
 
     return next.handle().pipe(
-      tap((responseBody) => {
+      tap((_responseBody) => {
         const durationMs = Date.now() - startTime;
         const statusCode = response.statusCode;
 

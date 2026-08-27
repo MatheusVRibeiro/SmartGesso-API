@@ -84,9 +84,7 @@ const createdOrder = {
 
 function buildMocks(quoteOverrides: Record<string, any> = {}) {
   const quote = { ...quoteBase, ...quoteOverrides };
-  let tx: any;
-
-  tx = {
+  const tx: any = {
     quote: {
       update: jest
         .fn()

@@ -1,9 +1,13 @@
-// @ts-nocheck — pdfkit CommonJS, types incompletos
 import { Injectable, NotFoundException } from '@nestjs/common';
-const PDFDocument = require('pdfkit');
+import * as PDFDocument from 'pdfkit';
 import { PassThrough } from 'stream';
 import { PrismaService } from '../../database/prisma.service';
 import { isSafeLogoUrl } from './safe-logo-url';
+
+/** Métodos de imagem existentes no runtime do pdfkit, ausentes no @types/pdfkit. */
+interface PDFDocumentImage {
+  openImage(data: Buffer): { width: number; height: number };
+}
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -161,7 +165,7 @@ export class QuotesPdfService {
   }
 
   /** Adiciona página se o espaço restante não comportar o bloco. */
-  private ensureSpace(doc: PDFDocument, y: number, needed: number): number {
+  private ensureSpace(doc: typeof PDFDocument, y: number, needed: number): number {
     if (y + needed > BOTTOM_LIMIT) {
       doc.addPage();
       return MARGIN;
@@ -171,7 +175,7 @@ export class QuotesPdfService {
 
   /** Busca a logo (URL remota ou data URI) e decodifica para inserção no PDF. */
   private async loadLogo(
-    doc: PDFDocument,
+    doc: typeof PDFDocument,
     logoUrl?: string | null,
   ): Promise<{ buffer: Buffer; width: number; height: number } | null> {
     if (!logoUrl) return null;
@@ -192,7 +196,7 @@ export class QuotesPdfService {
           clearTimeout(timer);
         }
       }
-      const img = doc.openImage(buffer);
+      const img = (doc as unknown as PDFDocumentImage).openImage(buffer);
       return { buffer, width: img.width, height: img.height };
     } catch {
       return null; // logo é opcional — nunca quebra o PDF
@@ -201,7 +205,7 @@ export class QuotesPdfService {
 
   /** Barra colorida do topo com nome da empresa e logo à direita. */
   private addHeader(
-    doc: PDFDocument,
+    doc: typeof PDFDocument,
     branding: any,
     company: any,
     primaryColor: string,
@@ -234,7 +238,7 @@ export class QuotesPdfService {
 
   /** Identidade da empresa: nome fantasia, razão social, CNPJ, contatos, endereço. */
   private addCompanyIdentity(
-    doc: PDFDocument,
+    doc: typeof PDFDocument,
     branding: any,
     company: any,
     primaryColor: string,
@@ -305,7 +309,7 @@ export class QuotesPdfService {
   }
 
   private addQuoteTitle(
-    doc: PDFDocument,
+    doc: typeof PDFDocument,
     quote: any,
     primaryColor: string,
     y: number,
@@ -324,7 +328,7 @@ export class QuotesPdfService {
     return y + 18;
   }
 
-  private addClientInfo(doc: PDFDocument, quote: any, y: number): number {
+  private addClientInfo(doc: typeof PDFDocument, quote: any, y: number): number {
     doc.fontSize(11).fillColor('#333333').text('Cliente', MARGIN, y);
     y += 15;
 
@@ -370,7 +374,7 @@ export class QuotesPdfService {
 
   /** Seção Prazo (V3 §54): início, prazo estimado, conclusão, entrega. */
   private addDeadlineSection(
-    doc: PDFDocument,
+    doc: typeof PDFDocument,
     quote: any,
     primaryColor: string,
     y: number,
@@ -417,7 +421,7 @@ export class QuotesPdfService {
 
   /** Seção comercial: pagamento (forma + condições), garantia e validade. */
   private addCommercialSection(
-    doc: PDFDocument,
+    doc: typeof PDFDocument,
     quote: any,
     branding: any,
     primaryColor: string,
@@ -463,7 +467,7 @@ export class QuotesPdfService {
 
   /** Tabela de itens com quebra de página e cabeçalho repetido. */
   private addItemsTable(
-    doc: PDFDocument,
+    doc: typeof PDFDocument,
     items: any[],
     primaryColor: string,
     y: number,
@@ -550,7 +554,7 @@ export class QuotesPdfService {
   }
 
   private addTotalsFooter(
-    doc: PDFDocument,
+    doc: typeof PDFDocument,
     quote: any,
     primaryColor: string,
     y: number,
@@ -578,7 +582,7 @@ export class QuotesPdfService {
   }
 
   private addObservations(
-    doc: PDFDocument,
+    doc: typeof PDFDocument,
     quote: any,
     y: number,
   ): number {
@@ -595,7 +599,7 @@ export class QuotesPdfService {
   }
 
   /** Rodapé com informações comerciais da empresa (V3 §55). */
-  private addCompanyFooter(doc: PDFDocument, branding: any, y: number) {
+  private addCompanyFooter(doc: typeof PDFDocument, branding: any, y: number) {
     let footerY = Math.max(y + 10, PAGE_HEIGHT - 110);
     if (footerY > BOTTOM_LIMIT - 40) {
       doc.addPage();

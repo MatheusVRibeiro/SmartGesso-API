@@ -9,7 +9,6 @@ import {
   Query,
   Req,
   Res,
-  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -134,7 +133,7 @@ export class QuotesController {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="orcamento-${id}.pdf"`);
       pdf.pipe(res);
-    } catch (error) {
+    } catch {
       res.status(500).json({ statusCode: 500, message: 'Erro ao gerar PDF' });
     }
   }

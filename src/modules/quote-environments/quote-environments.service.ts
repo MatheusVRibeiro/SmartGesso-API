@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateQuoteEnvironmentDto } from './dto/create-quote-environment.dto';
 import { UpdateQuoteEnvironmentDto } from './dto/update-quote-environment.dto';

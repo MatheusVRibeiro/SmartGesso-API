@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, IsOptional, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsDateString } from 'class-validator';
 
 export class UpdateInstallmentDto {
   @ApiProperty({ description: 'ID do pagamento associado', required: false })

@@ -22,47 +22,43 @@ export class ServiceOrdersService {
   ) {}
 
   async create(companyId: string, dto: CreateServiceOrderDto) {
-    try {
-      await this.ensureClientBelongsToCompany(companyId, dto.clientId);
-      if (dto.workId) {
-        await this.ensureWorkBelongsToCompany(companyId, dto.workId);
-      }
-
-      const code = await this.generateCode(companyId);
-
-      const profit = this.calculateProfit(dto.cost, dto.saleValue);
-
-      return this.convertDecimals(
-        await this.prisma.serviceOrder.create({
-          data: {
-            companyId,
-            clientId: dto.clientId,
-            workId: dto.workId,
-            code,
-            status: dto.status,
-            scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
-            completedDate: dto.completedDate ? new Date(dto.completedDate) : undefined,
-            cost: dto.cost,
-            saleValue: dto.saleValue,
-            profit,
-            observations: dto.observations,
-            checklist: dto.checklist,
-            materials: dto.materials
-              ? {
-                  create: dto.materials.map((m) => ({
-                    materialName: m.materialName,
-                    quantity: m.quantity,
-                    unit: m.unit,
-                  })),
-                }
-              : undefined,
-          },
-          include: SERVICE_ORDER_INCLUDE,
-        }),
-      );
-    } catch (error) {
-      throw error;
+    await this.ensureClientBelongsToCompany(companyId, dto.clientId);
+    if (dto.workId) {
+      await this.ensureWorkBelongsToCompany(companyId, dto.workId);
     }
+
+    const code = await this.generateCode(companyId);
+
+    const profit = this.calculateProfit(dto.cost, dto.saleValue);
+
+    return this.convertDecimals(
+      await this.prisma.serviceOrder.create({
+        data: {
+          companyId,
+          clientId: dto.clientId,
+          workId: dto.workId,
+          code,
+          status: dto.status,
+          scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
+          completedDate: dto.completedDate ? new Date(dto.completedDate) : undefined,
+          cost: dto.cost,
+          saleValue: dto.saleValue,
+          profit,
+          observations: dto.observations,
+          checklist: dto.checklist,
+          materials: dto.materials
+            ? {
+                create: dto.materials.map((m) => ({
+                  materialName: m.materialName,
+                  quantity: m.quantity,
+                  unit: m.unit,
+                })),
+              }
+            : undefined,
+        },
+        include: SERVICE_ORDER_INCLUDE,
+      }),
+    );
   }
 
   async findAll(

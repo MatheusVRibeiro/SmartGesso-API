@@ -9,7 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { formatCurrency } from '../../common/utils/format-currency';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PushService } from '../notifications/push.service';
-import { CreatePaymentDto, CreatePaymentInstallmentDto } from './dto/create-payment.dto';
+import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 
 const PAYMENT_INCLUDE = {
@@ -40,54 +40,50 @@ export class PaymentsService {
   ) {}
 
   async create(companyId: string, dto: CreatePaymentDto) {
-    try {
-      await this.ensureClientBelongsToCompany(companyId, dto.clientId);
-      if (dto.quoteId) {
-        await this.ensureQuoteBelongsToCompany(companyId, dto.quoteId);
-      }
-      if (dto.serviceOrderId) {
-        await this.ensureServiceOrderBelongsToCompany(companyId, dto.serviceOrderId);
-      }
-
-      const installmentCount = dto.installments?.length ?? dto.installmentCount ?? 1;
-      if (installmentCount > MAX_INSTALLMENTS) {
-        throw new BadRequestException(`Máximo de ${MAX_INSTALLMENTS} parcelas por recebimento`);
-      }
-      if (dto.installments && dto.installmentCount && dto.installments.length !== dto.installmentCount) {
-        throw new BadRequestException('A quantidade de parcelas informada não confere com installmentCount');
-      }
-
-      const paymentData: Prisma.PaymentCreateInput = {
-        company: { connect: { id: companyId } },
-        client: { connect: { id: dto.clientId } },
-        ...(dto.quoteId ? { quote: { connect: { id: dto.quoteId } } } : {}),
-        ...(dto.serviceOrderId
-          ? { serviceOrder: { connect: { id: dto.serviceOrderId } } }
-          : {}),
-        amount: dto.amount,
-        paymentMethod: dto.paymentMethod,
-        paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-        status: installmentCount > 1 ? 'PENDENTE' : dto.status,
-        notes: dto.notes,
-        receiptUrl: dto.receiptUrl,
-        installmentCount,
-      };
-
-      if (installmentCount > 1) {
-        const installments = this.buildInstallments(companyId, dto, installmentCount);
-        paymentData.installments = { create: installments };
-      }
-
-      const payment = await this.prisma.payment.create({
-        data: paymentData,
-        include: PAYMENT_INCLUDE,
-      });
-
-      return this.convertDecimals(payment);
-    } catch (error) {
-      throw error;
+    await this.ensureClientBelongsToCompany(companyId, dto.clientId);
+    if (dto.quoteId) {
+      await this.ensureQuoteBelongsToCompany(companyId, dto.quoteId);
     }
+    if (dto.serviceOrderId) {
+      await this.ensureServiceOrderBelongsToCompany(companyId, dto.serviceOrderId);
+    }
+
+    const installmentCount = dto.installments?.length ?? dto.installmentCount ?? 1;
+    if (installmentCount > MAX_INSTALLMENTS) {
+      throw new BadRequestException(`Máximo de ${MAX_INSTALLMENTS} parcelas por recebimento`);
+    }
+    if (dto.installments && dto.installmentCount && dto.installments.length !== dto.installmentCount) {
+      throw new BadRequestException('A quantidade de parcelas informada não confere com installmentCount');
+    }
+
+    const paymentData: Prisma.PaymentCreateInput = {
+      company: { connect: { id: companyId } },
+      client: { connect: { id: dto.clientId } },
+      ...(dto.quoteId ? { quote: { connect: { id: dto.quoteId } } } : {}),
+      ...(dto.serviceOrderId
+        ? { serviceOrder: { connect: { id: dto.serviceOrderId } } }
+        : {}),
+      amount: dto.amount,
+      paymentMethod: dto.paymentMethod,
+      paymentDate: dto.paymentDate ? new Date(dto.paymentDate) : undefined,
+      dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+      status: installmentCount > 1 ? 'PENDENTE' : dto.status,
+      notes: dto.notes,
+      receiptUrl: dto.receiptUrl,
+      installmentCount,
+    };
+
+    if (installmentCount > 1) {
+      const installments = this.buildInstallments(companyId, dto, installmentCount);
+      paymentData.installments = { create: installments };
+    }
+
+    const payment = await this.prisma.payment.create({
+      data: paymentData,
+      include: PAYMENT_INCLUDE,
+    });
+
+    return this.convertDecimals(payment);
   }
 
   async findAll(companyId: string, status?: string) {
