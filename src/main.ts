@@ -38,6 +38,13 @@ export async function bootstrap() {
   }
   // `*` no .env = refletir qualquer origem (dev). Com allowlist real, valida a origem.
   const allowAllOrigins = corsOrigins.includes('*');
+  // Fail-closed: `*` NUNCA é aceitável em produção (permitiria qualquer site originar
+  // requests credenciais). Falha no startup em vez de degradar silenciosamente.
+  if (!isDev && allowAllOrigins) {
+    throw new Error(
+      '[SECURITY] CORS: origem "*" não é permitida em produção. Defina CORS_MOBILE_ORIGINS/CORS_ADMIN_WEB_ORIGINS com allowlist explícita.',
+    );
+  }
   app.enableCors({
     origin: allowAllOrigins ? true : corsOrigins.length > 0 ? corsOrigins : false,
     credentials: true,
@@ -72,6 +79,11 @@ export async function bootstrap() {
   }
 
   const port = Number(process.env.PORT ?? 3000);
+  // Trust proxy: quando a API roda atrás de proxy/CDN (ex.: Hostinger), o req.ip
+  // seria o IP do proxy para todos — quebrando rate limiting por IP e audit logs.
+  if (process.env.TRUST_PROXY === 'true') {
+    app.set('trust proxy', 1); // 1 hop (proxy imediato)
+  }
   await app.listen(port);
   logger.log(`🚀 API rodando em: http://localhost:${port}/${prefix}`);
   if (swaggerEnabled) {

@@ -19,6 +19,13 @@ const SENSITIVE_FIELDS = [
   'refresh',
   'secret',
   'authorization',
+  'inviteToken',
+  'publicToken',
+  'document',
+  'cpf',
+  'cnpj',
+  'pixKey',
+  'bankInformation',
 ];
 
 @Injectable()

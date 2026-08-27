@@ -78,7 +78,6 @@ export class BusinessService {
         email: dto.email,
         phone: dto.phone,
         whatsapp: dto.whatsapp,
-        status: dto.status,
         timezone: dto.timezone,
       },
     });

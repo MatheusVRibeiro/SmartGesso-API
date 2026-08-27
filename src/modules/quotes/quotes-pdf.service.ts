@@ -188,10 +188,28 @@ export class QuotesPdfService {
         if (!(await isSafeLogoUrl(logoUrl))) return null;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 5000);
+        const MAX_LOGO_BYTES = 5 * 1024 * 1024; // 5 MB
         try {
-          const resp = await fetch(logoUrl, { signal: controller.signal });
+          let resp = await fetch(logoUrl, {
+            signal: controller.signal,
+            redirect: 'manual',
+          });
+          for (
+            let hops = 0;
+            resp.status >= 300 && resp.status <= 308 && hops < 3;
+            hops++
+          ) {
+            const loc = resp.headers.get('location');
+            if (!loc || !(await isSafeLogoUrl(loc))) return null;
+            resp = await fetch(loc, {
+              signal: controller.signal,
+              redirect: 'manual',
+            });
+          }
           if (!resp.ok) return null;
-          buffer = Buffer.from(await resp.arrayBuffer());
+          const buf = await resp.arrayBuffer();
+          if (buf.byteLength > MAX_LOGO_BYTES) return null;
+          buffer = Buffer.from(buf);
         } finally {
           clearTimeout(timer);
         }

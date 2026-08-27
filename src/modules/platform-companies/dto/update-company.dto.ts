@@ -40,9 +40,5 @@ export class UpdateCompanyDto {
 
   @IsOptional()
   @IsString()
-  status?: string;
-
-  @IsOptional()
-  @IsString()
   timezone?: string;
 }

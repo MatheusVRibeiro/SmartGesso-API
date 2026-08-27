@@ -1,6 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve, sep } from 'node:path';
+
+/** Diretório base do armazenamento local de anexos. */
+export const ATTACHMENTS_STORAGE_DIR = join(process.cwd(), 'attachments-storage');
 
 /**
  * Interface abstrata para provedores de armazenamento.
@@ -19,16 +22,19 @@ export interface StorageProvider {
  */
 @Injectable()
 export class LocalStorageProvider implements StorageProvider {
-  private readonly baseDir = join(process.cwd(), 'attachments-storage');
+  private readonly baseDir = ATTACHMENTS_STORAGE_DIR;
 
   async save(file: Buffer, relativePath: string): Promise<string> {
-    const fullPath = join(this.baseDir, relativePath);
+    const fullPath = resolve(this.baseDir, relativePath);
+    if (fullPath !== this.baseDir && !fullPath.startsWith(this.baseDir + sep)) {
+      throw new BadRequestException('Caminho de armazenamento inválido');
+    }
     const dir = dirname(fullPath);
-    
+
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
-    
+
     writeFileSync(fullPath, file);
     return fullPath;
   }

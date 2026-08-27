@@ -40,6 +40,47 @@ Analisar a API SmartGesso (segurança, qualidade, schema/DB) e corrigir os achad
 - [x] `quotes-pdf.service.ts` — **`@ts-nocheck` ELIMINADO** (12 erros PDFDocument → `typeof`, `require()` → `import * as`, `openImage` tipado via interface) — código de segurança agora type-checked
 - [ ] Validar: typecheck ✅ lint ✅ | testes | build
 
+## Achados dos subagents (4 relatórios consolidados 2026-08-27)
+
+### 🔴 CRÍTICO (confirmados)
+| # | Achado | Origem | Status |
+|---|--------|--------|--------|
+| C1 | **IDOR cross-tenant service-receivables**: `req.user.companyId` sempre undefined (User não tem companyId) → queries sem filtro tenant | T1+T4 | 🔧 corrigir |
+| C2 | **Escalação privilégio company-members**: sem PermissionsGuard, qualquer membro vira COMPANY_OWNER / remove colegas | T1 | 🔧 corrigir |
+| C3 | **SSRF logoUrl 3 bypasses**: redirect não revalidado, DNS rebinding, IPv4-mapped IPv6 | T2 | 🔧 corrigir |
+| C4 | **Path traversal uploads**: entityId não sanitizado → escrita arbitrária; sendFile sem root | T2 | 🔧 corrigir |
+
+### 🟠 ALTO
+| # | Achado | Origem |
+|---|--------|--------|
+| A1 | PermissionsGuard no-op em companies (profile/branding) + `status` editável por membro | T1 |
+| A2 | Matriz de permissões aplicada em só 2 de ~40 rotas | T1 |
+| A3 | Login plataforma sem throttle (brute force) | T1+T2 |
+| A4 | Logout plataforma sem guard → sessão nunca revogada | T1 |
+| A5 | Tokens push de ex-membros nunca revogados | T2 |
+| A6 | quotes.service.ts 1003 linhas (God file) + race createVersion + notificação dupla | T3 |
+| A7 | convertDecimals duplicado 5× + ensure* duplicado 5× | T3 |
+| A8 | business.service.ts 13 dto:any + status sem validação | T3 |
+
+### 🟡 MÉDIO (amostra)
+- M1: acceptInvitation varre TODOS convites (DoS CPU) — fix tokenRef
+- M2: rotateSession loop argon2 sem limite + sem purga
+- M3: switchCompany altera activeCompanyId de TODAS as sessões
+- M4: CORS `*` em produção deve falhar (fail-closed)
+- M5: SWAGGER_ENABLED=true no .env.example
+- M6: TRUST_PROXY nunca lido
+- M7: FKs sem índice (CompanyAddress, Payment.quoteId, billing models)
+- M8: Client.status / ProductionOrderItem.status String → enum
+- M9: PrismaRepositoryService + memory.store.ts + domain.ts mortos
+
+## Fase 2 — Correções (em andamento)
+- [x] Lote 0 (lint): 23 erros → 0 + @ts-nocheck eliminado (commit b2f9375)
+- [ ] Lote 1: críticos C1-C4 (4 subagents)
+- [ ] Lote 2: altos A1-A5
+- [ ] Lote 3: médios priorizados
+- [ ] Validação final: typecheck + lint + tests + build
+- [ ] Commit PT-BR
+
 ## Achados preliminares (análise própria)
 | # | Achado | Severidade | Status |
 |---|--------|-----------|--------|

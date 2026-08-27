@@ -65,9 +65,12 @@ export function isPrivateIPv4(ip: string): boolean {
   );
 }
 
-/** Bloqueia ::/128, ::1, fc00::/7 (unique local), fe80::/10 (link-local), multicast. */
+/** Bloqueia ::/128, ::1, fc00::/7 (unique local), fe80::/10 (link-local), multicast e IPv4-mapped IPv6. */
 export function isPrivateIPv6(ip: string): boolean {
   const lower = ip.toLowerCase();
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d) → valida o IPv4 embutido
+  const mapped = lower.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped) return isPrivateIPv4(mapped[1]);
   return (
     lower === '::' ||
     lower === '::1' ||

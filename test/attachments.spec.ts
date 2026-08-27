@@ -1,6 +1,8 @@
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { AttachmentsService } from '../src/modules/attachments/attachments.service';
+import { LocalStorageProvider } from '../src/modules/attachments/storage-provider';
 
 /**
  * Testes unitários do AttachmentsService — ETAPA 8 V4.
@@ -21,7 +23,7 @@ describe('AttachmentsService', () => {
   const USER_ID = 'user-1';
   const ATTACHMENT_ID = 'att-1';
   const ENTITY_TYPE = 'service-order';
-  const ENTITY_ID = 'so-1';
+  const ENTITY_ID = 'so-00000001';
 
   const mockFile: Express.Multer.File = {
     originalname: 'foto.jpg',
@@ -174,6 +176,33 @@ describe('AttachmentsService', () => {
 
       await expect(
         service.create(COMPANY_ID, USER_ID, mockFile, ENTITY_TYPE, ''),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('lança BadRequestException para entityId com path traversal (../)', async () => {
+      await expect(
+        service.create(
+          COMPANY_ID,
+          USER_ID,
+          mockFile,
+          ENTITY_TYPE,
+          '../../../../etc/cron.d/evil',
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(storageProvider.save).not.toHaveBeenCalled();
+      expect(prisma.attachment.create).not.toHaveBeenCalled();
+    });
+
+    it('lança BadRequestException para entityId curto demais (< 8 chars)', async () => {
+      await expect(
+        service.create(COMPANY_ID, USER_ID, mockFile, ENTITY_TYPE, 'so-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('lança BadRequestException para entityId com caracteres fora de [A-Za-z0-9-]', async () => {
+      await expect(
+        service.create(COMPANY_ID, USER_ID, mockFile, ENTITY_TYPE, 'so/1'),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -363,5 +392,42 @@ describe('AttachmentsService', () => {
       const callData = (prisma.attachment.create.mock.calls[0] as any)[0].data;
       expect(callData.companyId).toBe(COMPANY_ID);
     });
+  });
+});
+
+describe('LocalStorageProvider.save (path traversal)', () => {
+  let provider: LocalStorageProvider;
+
+  const LOCAL_COMPANY_ID = 'company-local';
+  const LOCAL_ENTITY_ID = 'so-local-0001';
+
+  beforeEach(() => {
+    provider = new LocalStorageProvider();
+  });
+
+  it('rejeita relativePath com ../ que escapa do baseDir', async () => {
+    await expect(
+      provider.save(Buffer.from('x'), '../../../../tmp/evil.txt'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejeita relativePath absoluto fora do baseDir', async () => {
+    await expect(
+      provider.save(Buffer.from('x'), join(process.cwd(), 'uploads', 'evil.txt')),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('salva arquivo legítimo dentro do baseDir', async () => {
+    const relativePath = join(LOCAL_COMPANY_ID, 'geral', LOCAL_ENTITY_ID, 'a1.jpg');
+    const fullPath = await provider.save(Buffer.from('conteudo'), relativePath);
+
+    expect(fullPath.startsWith(join(process.cwd(), 'attachments-storage'))).toBe(
+      true,
+    );
+    expect(existsSync(fullPath)).toBe(true);
+
+    // Limpeza
+    await provider.delete(fullPath);
+    expect(existsSync(fullPath)).toBe(false);
   });
 });

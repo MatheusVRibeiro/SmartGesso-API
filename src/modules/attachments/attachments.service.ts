@@ -71,6 +71,10 @@ export class AttachmentsService {
     if (!entityType || !entityId) {
       throw new BadRequestException('entityType e entityId são obrigatórios');
     }
+    const ENTITY_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
+    if (!ENTITY_ID_RE.test(entityId)) {
+      throw new BadRequestException('entityId em formato inválido');
+    }
     if (!ATTACHMENT_ALLOWED_MIME_TYPES.has(file.mimetype)) {
       throw new BadRequestException(
         `Tipo de arquivo não permitido: ${file.mimetype}.`,

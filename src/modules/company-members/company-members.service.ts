@@ -126,6 +126,12 @@ export class CompanyMembersService {
       data: { status: 'INATIVO' },
       include: { user: true },
     });
+    // Revoga push tokens do ex-membro — evita que continue recebendo
+    // notificações internas da empresa após sair.
+    await this.prisma.pushToken.updateMany({
+      where: { companyId, userId: member.userId, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
     return this.toMemberDto(updated);
   }
 
@@ -138,6 +144,11 @@ export class CompanyMembersService {
       );
     }
     await this.prisma.companyMember.delete({ where: { id } });
+    // Revoga push tokens do ex-membro ao ser removido.
+    await this.prisma.pushToken.updateMany({
+      where: { companyId, userId: member.userId, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
     return { removed: true, id };
   }
 

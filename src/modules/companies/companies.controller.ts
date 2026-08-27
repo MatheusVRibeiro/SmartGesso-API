@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { PermissionsGuard } from '../core/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { BusinessService } from '../../business.service';
 import { UpdateCompanyDto } from '../platform-companies/dto/update-company.dto';
 import { UpdateBrandingDto } from './dto/update-branding.dto';
@@ -28,6 +29,7 @@ export class CompanyController {
   }
 
   @UseGuards(CompanyAccessGuard, PermissionsGuard)
+  @RequirePermissions('company.read')
   @Get('profile')
   @ApiOperation({ summary: 'Dados da empresa' })
   profile(@Req() r: any) {
@@ -35,6 +37,7 @@ export class CompanyController {
   }
 
   @UseGuards(CompanyAccessGuard, PermissionsGuard)
+  @RequirePermissions('company.update')
   @Patch('profile')
   @ApiOperation({ summary: 'Atualiza dados da empresa' })
   patch(
@@ -45,6 +48,7 @@ export class CompanyController {
   }
 
   @UseGuards(CompanyAccessGuard, PermissionsGuard)
+  @RequirePermissions('company.branding.read')
   @Get('branding')
   @ApiOperation({ summary: 'Dados de branding da empresa' })
   branding(@Req() r: any) {
@@ -52,6 +56,7 @@ export class CompanyController {
   }
 
   @UseGuards(CompanyAccessGuard, PermissionsGuard)
+  @RequirePermissions('company.branding.update')
   @Patch('branding')
   @ApiOperation({ summary: 'Atualiza branding da empresa' })
   patchBranding(

@@ -10,13 +10,15 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
+import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { ServiceReceivablesService } from './service-receivables.service';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateInstallmentDto } from './dto/update-installment.dto';
 
 @ApiTags('Service Receivables')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
 @Controller()
 export class ServiceReceivablesController {
   constructor(
@@ -30,7 +32,7 @@ export class ServiceReceivablesController {
     @Body() dto: CreateReceivableDto,
     @Request() req: any,
   ) {
-    const companyId = req.user.companyId;
+    const companyId = req.company.id;
     return this.receivablesService.generateReceivables(
       serviceOrderId,
       companyId,
@@ -44,7 +46,7 @@ export class ServiceReceivablesController {
     @Param('serviceOrderId') serviceOrderId: string,
     @Request() req: any,
   ) {
-    const companyId = req.user.companyId;
+    const companyId = req.company.id;
     return this.receivablesService.getReceivablesByServiceOrder(
       serviceOrderId,
       companyId,
@@ -59,7 +61,7 @@ export class ServiceReceivablesController {
     @Body() dto: UpdateInstallmentDto,
     @Request() req: any,
   ) {
-    const companyId = req.user.companyId;
+    const companyId = req.company.id;
     return this.receivablesService.updateInstallment(
       receivableId,
       installmentId,

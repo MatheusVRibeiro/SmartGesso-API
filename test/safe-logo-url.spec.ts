@@ -32,6 +32,10 @@ describe('safe-logo-url (anti-SSRF)', () => {
       ['fd12:3456::1', true],
       ['fe80::1', true],
       ['ff02::1', true], // multicast
+      ['::ffff:127.0.0.1', true], // IPv4-mapped → loopback
+      ['::ffff:169.254.169.254', true], // IPv4-mapped → metadata cloud
+      ['::ffff:10.0.0.1', true], // IPv4-mapped → privado
+      ['::ffff:8.8.8.8', false], // IPv4-mapped → público
       ['2001:4860:4860::8888', false], // Google DNS público
       ['2606:4700::1111', false], // Cloudflare público
     ])('%s → %s', (ip, expected) => {
@@ -62,6 +66,18 @@ describe('safe-logo-url (anti-SSRF)', () => {
 
     it('rejeita IPv6 loopback', async () => {
       await expect(isSafeLogoUrl('http://[::1]:8080/logo.png')).resolves.toBe(false);
+    });
+
+    it('rejeita IPv4-mapped IPv6 (loopback)', async () => {
+      await expect(
+        isSafeLogoUrl('http://[::ffff:127.0.0.1]:8080/logo.png'),
+      ).resolves.toBe(false);
+    });
+
+    it('rejeita IPv4-mapped IPv6 (metadata cloud)', async () => {
+      await expect(
+        isSafeLogoUrl('http://[::ffff:169.254.169.254]/latest/meta-data'),
+      ).resolves.toBe(false);
     });
 
     it('rejeita scheme não-http (file://)', async () => {

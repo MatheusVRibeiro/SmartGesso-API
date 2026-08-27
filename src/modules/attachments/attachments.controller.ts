@@ -16,6 +16,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
+import { sep } from 'node:path';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
@@ -23,6 +24,7 @@ import {
   ATTACHMENT_ALLOWED_MIME_TYPES,
   AttachmentsService,
 } from './attachments.service';
+import { ATTACHMENTS_STORAGE_DIR } from './storage-provider';
 import { CreateAttachmentDto } from './dto';
 
 @ApiTags('attachments')
@@ -107,12 +109,22 @@ export class AttachmentsController {
       id,
     );
 
+    // Garante que o caminho físico fica dentro do diretório base de anexos
+    // (proteção contra path traversal em storagePath persistido).
+    const storagePath = attachment.storagePath;
+    if (
+      !storagePath.startsWith(ATTACHMENTS_STORAGE_DIR + sep) &&
+      !storagePath.startsWith(ATTACHMENTS_STORAGE_DIR + '/')
+    ) {
+      throw new BadRequestException('Caminho de armazenamento inválido');
+    }
+
     res.setHeader('Content-Type', attachment.mimeType);
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${attachment.originalName}"`,
     );
-    res.sendFile(attachment.storagePath, (err) => {
+    res.sendFile(storagePath, (err) => {
       if (err) {
         res.status(404).json({
           statusCode: 404,
