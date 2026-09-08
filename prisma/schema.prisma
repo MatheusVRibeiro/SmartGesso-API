@@ -809,6 +809,9 @@ model ServiceOrder {
   profit             Decimal?               @db.Decimal(15, 2)
   observations       String?                @db.Text
   checklist          Json?
+  pauseReason        String?
+  etapas             Json?
+  needsProduction    Boolean                @default(false)
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   deletedAt          DateTime?

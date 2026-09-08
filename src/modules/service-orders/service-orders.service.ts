@@ -46,6 +46,9 @@ export class ServiceOrdersService {
           profit,
           observations: dto.observations,
           checklist: dto.checklist,
+          pauseReason: dto.pauseReason,
+          etapas: dto.etapas,
+          needsProduction: dto.needsProduction,
           materials: dto.materials
             ? {
                 create: dto.materials.map((m) => ({
@@ -142,6 +145,9 @@ export class ServiceOrdersService {
           profit,
           observations: dto.observations,
           checklist: dto.checklist,
+          pauseReason: dto.pauseReason,
+          etapas: dto.etapas,
+          needsProduction: dto.needsProduction,
           materials: dto.materials
             ? {
                 create: dto.materials.map((m) => ({

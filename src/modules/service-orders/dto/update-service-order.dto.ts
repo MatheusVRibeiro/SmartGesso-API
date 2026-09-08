@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, IsArray, ValidateNested, IsNumber, IsDateString, IsObject, Min } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsArray, ValidateNested, IsNumber, IsDateString, IsObject, IsBoolean, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ServiceOrderStatus } from '@prisma/client';
 
@@ -58,6 +58,18 @@ export class UpdateServiceOrderDto {
   @IsOptional()
   @IsObject()
   checklist?: Record<string, any>;
+
+  @IsOptional()
+  @IsString()
+  pauseReason?: string;
+
+  @IsOptional()
+  @IsObject()
+  etapas?: Record<string, boolean>;
+
+  @IsOptional()
+  @IsBoolean()
+  needsProduction?: boolean;
 
   @IsOptional()
   @IsArray()
