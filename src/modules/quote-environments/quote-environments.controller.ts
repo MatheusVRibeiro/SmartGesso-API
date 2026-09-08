@@ -15,8 +15,8 @@ import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { QuoteEnvironmentsService } from './quote-environments.service';
 import { CreateQuoteEnvironmentDto } from './dto/create-quote-environment.dto';
 import { UpdateQuoteEnvironmentDto } from './dto/update-quote-environment.dto';
-import { CreateMeasurementDto } from '../measurements/dto/create-measurement.dto';
-import { UpdateMeasurementDto } from '../measurements/dto/update-measurement.dto';
+import { CreateQuoteEnvironmentMeasurementDto } from './dto/create-quote-environment-measurement.dto';
+import { UpdateQuoteEnvironmentMeasurementDto } from './dto/update-quote-environment-measurement.dto';
 
 @ApiTags('quotes-environments')
 @ApiBearerAuth()
@@ -88,7 +88,7 @@ export class QuoteEnvironmentsController {
     @Req() r: any,
     @Param('quoteId') quoteId: string,
     @Param('environmentId') environmentId: string,
-    @Body() dto: CreateMeasurementDto,
+    @Body() dto: CreateQuoteEnvironmentMeasurementDto,
   ) {
     return this.quoteEnvironmentsService.createMeasurement(
       r.company.id,
@@ -104,7 +104,7 @@ export class QuoteEnvironmentsController {
     @Param('quoteId') quoteId: string,
     @Param('environmentId') environmentId: string,
     @Param('id') id: string,
-    @Body() dto: UpdateMeasurementDto,
+    @Body() dto: UpdateQuoteEnvironmentMeasurementDto,
   ) {
     return this.quoteEnvironmentsService.updateMeasurement(
       r.company.id,

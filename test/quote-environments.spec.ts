@@ -714,5 +714,74 @@ describe('QuoteEnvironmentsService (ETAPA 6b V4)', () => {
         service.removeEnvironment('company-1', 'quote-1', 'env-2'),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('createEnvironment: gera nome padrão se name estiver vazio ou ausente', async () => {
+      prisma.quote.findFirst.mockResolvedValue({ id: 'quote-1' });
+      prisma.quoteEnvironment.aggregate.mockResolvedValue({
+        _max: { order: 0 },
+      });
+      prisma.quoteEnvironment.create.mockResolvedValue({
+        id: 'env-default',
+        companyId: 'company-1',
+        quoteId: 'quote-1',
+        name: 'Ambiente 1',
+        order: 1,
+        measurements: [],
+      });
+
+      const result = await service.createEnvironment('company-1', 'quote-1', {
+        name: '',
+      });
+
+      expect(prisma.quoteEnvironment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            name: 'Ambiente 1',
+            order: 1,
+          }),
+        }),
+      );
+      expect(result.name).toBe('Ambiente 1');
+    });
+
+    it('createMeasurement: aceita height como alias para ceilingHeight e busca nome do ambiente pai se ausente', async () => {
+      prisma.quoteEnvironment.findFirst
+        .mockResolvedValueOnce({ id: 'env-1' }) // ensureEnvironmentBelongsToCompany
+        .mockResolvedValueOnce({ name: 'Sala de Estar' }); // fetch env name fallback
+
+      prisma.measurement.create.mockResolvedValue({
+        id: 'meas-height',
+        companyId: 'company-1',
+        quoteEnvironmentId: 'env-1',
+        environmentName: 'Sala de Estar',
+        ceilingHeight: 2.8,
+        length: 5,
+        width: 4,
+        area: 20,
+        perimeter: 18,
+      });
+
+      const result = await service.createMeasurement(
+        'company-1',
+        'quote-1',
+        'env-1',
+        {
+          height: 2.8,
+          length: 5,
+          width: 4,
+        },
+      );
+
+      expect(prisma.measurement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            environmentName: 'Sala de Estar',
+            ceilingHeight: 2.8,
+          }),
+        }),
+      );
+      expect(result.ceilingHeight).toBe(2.8);
+      expect(result.environmentName).toBe('Sala de Estar');
+    });
   });
 });

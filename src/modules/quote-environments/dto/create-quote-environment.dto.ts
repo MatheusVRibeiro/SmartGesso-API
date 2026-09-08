@@ -1,16 +1,21 @@
 import {
   IsInt,
-  IsNotEmpty,
   IsOptional,
   IsString,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 /** DTO para criação de ambiente de orçamento (QuoteEnvironment). */
 export class CreateQuoteEnvironmentDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  name!: string;
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : undefined,
+  )
+  name?: string;
 
   @IsOptional()
   @IsString()
@@ -20,4 +25,8 @@ export class CreateQuoteEnvironmentDto {
   @IsInt()
   @Min(0)
   order?: number;
+
+  @IsOptional()
+  @IsString()
+  applicationType?: string;
 }

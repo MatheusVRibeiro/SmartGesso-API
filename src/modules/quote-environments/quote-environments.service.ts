@@ -6,8 +6,8 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { CreateQuoteEnvironmentDto } from './dto/create-quote-environment.dto';
 import { UpdateQuoteEnvironmentDto } from './dto/update-quote-environment.dto';
-import { CreateMeasurementDto } from '../measurements/dto/create-measurement.dto';
-import { UpdateMeasurementDto } from '../measurements/dto/update-measurement.dto';
+import { CreateQuoteEnvironmentMeasurementDto } from './dto/create-quote-environment-measurement.dto';
+import { UpdateQuoteEnvironmentMeasurementDto } from './dto/update-quote-environment-measurement.dto';
 
 const ENVIRONMENT_INCLUDE = {
   measurements: {
@@ -140,13 +140,14 @@ export class QuoteEnvironmentsService {
       where: { companyId, quoteId, deletedAt: null },
       _max: { order: true },
     });
-    const order = dto.order ?? (maxOrder._max.order ?? 0) + 1;
+    const order = dto.order ?? (maxOrder._max?.order ?? 0) + 1;
+    const name = dto.name?.trim() || `Ambiente ${order}`;
 
     const environment = await this.prisma.quoteEnvironment.create({
       data: {
         companyId,
         quoteId,
-        name: dto.name,
+        name,
         description: dto.description,
         order,
       },
@@ -168,9 +169,9 @@ export class QuoteEnvironmentsService {
       orderBy: { order: 'asc' },
     });
 
-    return environments.map((env) => ({
-      ...env,
-      measurements: env.measurements.map(serializeMeasurement),
+    return environments.map((e) => ({
+      ...e,
+      measurements: e.measurements.map(serializeMeasurement),
     }));
   }
 
@@ -231,7 +232,7 @@ export class QuoteEnvironmentsService {
     companyId: string,
     quoteId: string,
     environmentId: string,
-    dto: CreateMeasurementDto,
+    dto: CreateQuoteEnvironmentMeasurementDto,
   ) {
     await this.ensureEnvironmentBelongsToCompany(
       companyId,
@@ -246,15 +247,25 @@ export class QuoteEnvironmentsService {
       dto.perimeter,
     );
 
+    const ceilingHeight = dto.ceilingHeight ?? dto.height;
+    let environmentName = dto.environmentName?.trim();
+    if (!environmentName) {
+      const env = await this.prisma.quoteEnvironment.findFirst({
+        where: { id: environmentId },
+        select: { name: true },
+      });
+      environmentName = env?.name || 'Ambiente';
+    }
+
     const measurement = await this.prisma.measurement.create({
       data: {
         companyId,
         quoteEnvironmentId: environmentId,
-        environmentName: dto.environmentName,
+        environmentName,
         applicationType: dto.applicationType,
         length: dto.length,
         width: dto.width,
-        ceilingHeight: dto.ceilingHeight,
+        ceilingHeight,
         area,
         perimeter,
         doors: dto.doors,
@@ -275,7 +286,7 @@ export class QuoteEnvironmentsService {
     quoteId: string,
     environmentId: string,
     measurementId: string,
-    dto: UpdateMeasurementDto,
+    dto: UpdateQuoteEnvironmentMeasurementDto,
   ) {
     await this.ensureMeasurementBelongsToEnvironment(
       companyId,
@@ -297,6 +308,9 @@ export class QuoteEnvironmentsService {
       dto.perimeter ?? toNumber(existing?.perimeter),
     );
 
+    const ceilingHeight =
+      dto.ceilingHeight ?? dto.height ?? toNumber(existing?.ceilingHeight) ?? undefined;
+
     const measurement = await this.prisma.measurement.update({
       where: { id: measurementId },
       data: {
@@ -304,7 +318,7 @@ export class QuoteEnvironmentsService {
         applicationType: dto.applicationType,
         length: dto.length,
         width: dto.width,
-        ceilingHeight: dto.ceilingHeight,
+        ceilingHeight,
         area,
         perimeter,
         doors: dto.doors,
