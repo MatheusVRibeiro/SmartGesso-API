@@ -403,6 +403,8 @@ export class QuotesService {
       include: SERVICE_ORDER_INCLUDE,
     });
     if (existingOrder) {
+      // OS já existia (2ª aprovação): garante convertedAt mesmo assim.
+      await this.markQuoteAsConverted(tx, quote.id);
       return { serviceOrder: existingOrder, created: false };
     }
 
@@ -413,29 +415,56 @@ export class QuotesService {
       tx,
     );
 
-    // 3. Criar a ServiceOrder
-    const serviceOrder = await tx.serviceOrder.create({
-      data: {
-        companyId,
-        clientId: quote.clientId,
-        workId: quote.workId ?? undefined,
-        quoteId: quote.id,
-        code,
-        status: 'PENDENTE',
-        scheduledDate: quote.startDate ? new Date(quote.startDate) : undefined,
-        saleValue: Number(quote.total),
-        observations: quote.observations ?? undefined,
-      },
-      include: SERVICE_ORDER_INCLUDE,
-    });
+    // 3. Criar a ServiceOrder.
+    // Sob concorrência, outra request pode criar a OS entre o findFirst acima
+    // e o create abaixo; o UNIQUE (companyId, quoteId) rejeita com P2002 e a
+    // OS já criada pelo concorrente é retornada (idempotência sob race).
+    let serviceOrder;
+    try {
+      serviceOrder = await tx.serviceOrder.create({
+        data: {
+          companyId,
+          clientId: quote.clientId,
+          workId: quote.workId ?? undefined,
+          quoteId: quote.id,
+          code,
+          status: 'PENDENTE',
+          scheduledDate: quote.startDate ? new Date(quote.startDate) : undefined,
+          saleValue: Number(quote.total),
+          observations: quote.observations ?? undefined,
+        },
+        include: SERVICE_ORDER_INCLUDE,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const racedOrder = await tx.serviceOrder.findFirst({
+          where: { companyId, quoteId: quote.id },
+          include: SERVICE_ORDER_INCLUDE,
+        });
+        if (racedOrder) {
+          await this.markQuoteAsConverted(tx, quote.id);
+          return { serviceOrder: racedOrder, created: false };
+        }
+      }
+      // P2002 sem OS correspondente (improvável) ou qualquer outro erro: não mascarar.
+      throw error;
+    }
 
     // 4. Marcar orçamento como convertido
-    await tx.quote.update({
-      where: { id: quote.id },
-      data: { convertedAt: new Date() },
-    });
+    await this.markQuoteAsConverted(tx, quote.id);
 
     return { serviceOrder, created: true };
+  }
+
+  /** Marca o orçamento como convertido (convertedAt). Idempotente por natureza. */
+  private async markQuoteAsConverted(tx: any, quoteId: string): Promise<void> {
+    await tx.quote.update({
+      where: { id: quoteId },
+      data: { convertedAt: new Date() },
+    });
   }
 
   /** Aprova o orçamento: status APROVADO + registro de histórico + criação idempotente de OS. */
