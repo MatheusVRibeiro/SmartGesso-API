@@ -5,7 +5,6 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { UPLOADS_DIR, UPLOADS_PREFIX } from './modules/uploads/uploads.service';
 
 export async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -50,14 +49,12 @@ export async function bootstrap() {
     credentials: true,
   });
 
-  // Serve arquivos enviados (fotos) estaticamente em /uploads.
-  app.useStaticAssets(UPLOADS_DIR, {
-    prefix: UPLOADS_PREFIX,
-    setHeaders: (res) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
-    },
-  });
+  // [P1.12 — V5 ETAPA 10] A leitura estática de /uploads foi REMOVIDA (antes:
+  // useStaticAssets servia fotos de obra/comprovantes para qualquer pessoa com
+  // a URL). Os arquivos agora são servidos APENAS pela rota autenticada
+  // GET /api/v1/uploads/:subdir/:filename (UploadsController): exige JWT,
+  // resolve o registro Attachment pela storageKey e valida o companyId.
+  // Legados (sem registro, pré-migração) são negados com 404 (fail-closed).
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );
