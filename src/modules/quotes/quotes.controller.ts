@@ -17,6 +17,8 @@ import { Response } from 'express';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
+import { PermissionsGuard } from '../core/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { QuotesService } from './quotes.service';
 import { QuotesPdfService } from './quotes-pdf.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
@@ -35,6 +37,8 @@ export class QuotesController {
   ) {}
 
   @Get()
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.read')
   @ApiOperation({ summary: 'Lista orçamentos da empresa (paginado)' })
   findAll(
     @Req() r: any,
@@ -46,42 +50,56 @@ export class QuotesController {
   }
 
   @Get('by-token/:token')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.read')
   @ApiOperation({ summary: 'Busca orçamento pelo token público (deep link)' })
   findByToken(@Req() r: any, @Param('token') token: string) {
     return this.quotesService.findByCompanyToken(r.company.id, token);
   }
 
   @Get(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.read')
   @ApiOperation({ summary: 'Busca orçamento por ID' })
   findOne(@Req() r: any, @Param('id') id: string) {
     return this.quotesService.findOne(r.company.id, id);
   }
 
   @Post()
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.create')
   @ApiOperation({ summary: 'Cria novo orçamento' })
   create(@Req() r: any, @Body() dto: CreateQuoteDto) {
     return this.quotesService.create(r.company.id, dto);
   }
 
   @Patch(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.update')
   @ApiOperation({ summary: 'Atualiza orçamento' })
   update(@Req() r: any, @Param('id') id: string, @Body() dto: UpdateQuoteDto) {
     return this.quotesService.update(r.company.id, id, dto);
   }
 
   @Delete(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.cancel')
   @ApiOperation({ summary: 'Remove orçamento' })
   remove(@Req() r: any, @Param('id') id: string) {
     return this.quotesService.remove(r.company.id, id);
   }
 
   @Post(':id/version')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.create')
   @ApiOperation({ summary: 'Cria nova versão do orçamento' })
   createVersion(@Req() r: any, @Param('id') id: string) {
     return this.quotesService.createVersion(r.company.id, id);
   }
 
   @Post(':id/convert-to-service')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.approve')
   @ApiOperation({
     summary: 'Converte orçamento aprovado em OS',
     deprecated: true,
@@ -93,12 +111,16 @@ export class QuotesController {
   }
 
   @Post(':id/approve')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.approve')
   @ApiOperation({ summary: 'Aprova o orçamento (status APROVADO + histórico)' })
   approve(@Req() r: any, @Param('id') id: string) {
     return this.quotesService.approve(r.company.id, id, r.user?.id);
   }
 
   @Post(':id/reject')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.cancel')
   @ApiOperation({ summary: 'Rejeita o orçamento (status REJEITADO + histórico)' })
   reject(
     @Req() r: any,
@@ -109,6 +131,8 @@ export class QuotesController {
   }
 
   @Post(':id/duplicate')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.create')
   @ApiOperation({
     summary: 'Duplica o orçamento (novo quoteNumber, status RASCUNHO)',
   })
@@ -117,6 +141,8 @@ export class QuotesController {
   }
 
   @Post(':id/share')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.read')
   @ApiOperation({
     summary:
       'Cria deep link público do orçamento (token + URL). Idempotente: reutiliza o token se já existir.',
@@ -126,6 +152,8 @@ export class QuotesController {
   }
 
   @Get(':id/pdf')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('quotes.generate_pdf')
   @ApiOperation({ summary: 'Gera PDF do orçamento' })
   async generatePdf(@Req() r: any, @Param('id') id: string, @Res() res: Response) {
     try {
