@@ -14,6 +14,7 @@ import { UpdatePaymentDto } from './dto/update-payment.dto';
 
 const PAYMENT_INCLUDE = {
   client: { select: { id: true, name: true } },
+  serviceOrder: { select: { id: true, code: true, clientId: true } },
   installments: {
     select: {
       id: true,
@@ -44,8 +45,17 @@ export class PaymentsService {
     if (dto.quoteId) {
       await this.ensureQuoteBelongsToCompany(companyId, dto.quoteId);
     }
+    let serviceOrder: { id: string; clientId: string } | null = null;
     if (dto.serviceOrderId) {
-      await this.ensureServiceOrderBelongsToCompany(companyId, dto.serviceOrderId);
+      serviceOrder = await this.ensureServiceOrderBelongsToCompany(
+        companyId,
+        dto.serviceOrderId,
+      );
+    }
+    if (serviceOrder && serviceOrder.clientId !== dto.clientId) {
+      throw new BadRequestException(
+        'O cliente do pagamento deve corresponder ao cliente da ordem de serviço',
+      );
     }
 
     const installmentCount = dto.installments?.length ?? dto.installmentCount ?? 1;
@@ -112,7 +122,7 @@ export class PaymentsService {
   }
 
   async update(companyId: string, id: string, dto: UpdatePaymentDto) {
-    await this.findOne(companyId, id);
+    const existing = await this.findOne(companyId, id);
 
     if (dto.clientId) {
       await this.ensureClientBelongsToCompany(companyId, dto.clientId);
@@ -120,8 +130,22 @@ export class PaymentsService {
     if (dto.quoteId) {
       await this.ensureQuoteBelongsToCompany(companyId, dto.quoteId);
     }
-    if (dto.serviceOrderId) {
-      await this.ensureServiceOrderBelongsToCompany(companyId, dto.serviceOrderId);
+
+    // Valida a combinação EFETIVA cliente ↔ ordem de serviço: o update pode
+    // mudar só o clientId (mantendo a OS vinculada), só a OS ou ambos —
+    // todos os casos devem permanecer coerentes com o cliente da OS.
+    const effectiveClientId = dto.clientId ?? existing.clientId;
+    const effectiveServiceOrderId = dto.serviceOrderId ?? existing.serviceOrderId;
+    if ((dto.clientId || dto.serviceOrderId) && effectiveClientId && effectiveServiceOrderId) {
+      const serviceOrder = await this.ensureServiceOrderBelongsToCompany(
+        companyId,
+        effectiveServiceOrderId,
+      );
+      if (serviceOrder.clientId !== effectiveClientId) {
+        throw new BadRequestException(
+          'O cliente do pagamento deve corresponder ao cliente da ordem de serviço',
+        );
+      }
     }
 
     const payment = await this.prisma.payment.update({
@@ -276,19 +300,23 @@ export class PaymentsService {
     }
   }
 
+  /** Valida que a OS existe, pertence à empresa ativa e não foi removida.
+   *  Retorna { id, clientId } para permitir validar a coerência
+   *  cliente ↔ ordem de serviço no recebimento. */
   private async ensureServiceOrderBelongsToCompany(
     companyId: string,
     serviceOrderId: string,
-  ) {
+  ): Promise<{ id: string; clientId: string }> {
     const so = await this.prisma.serviceOrder.findFirst({
       where: { id: serviceOrderId, companyId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, clientId: true },
     });
     if (!so) {
       throw new BadRequestException(
         'Ordem de serviço inválida: não pertence à empresa ativa',
       );
     }
+    return so;
   }
 
   private convertDecimals(payment: any) {
