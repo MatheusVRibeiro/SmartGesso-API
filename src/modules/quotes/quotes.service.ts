@@ -145,6 +145,10 @@ export class QuotesService {
       where,
       pagination,
       { createdAt: 'desc' },
+      {
+        client: { select: { id: true, name: true, phone: true } },
+        work: { select: { id: true, name: true } },
+      },
     );
 
     // Convert decimals for all items
