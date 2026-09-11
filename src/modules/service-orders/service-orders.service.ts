@@ -9,8 +9,9 @@ import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination
 import { paginate } from '../../common/utils/paginate';
 
 const SERVICE_ORDER_INCLUDE = {
-  client: { select: { id: true, name: true } },
+  client: { select: { id: true, name: true, phone: true } },
   work: { select: { id: true, name: true } },
+  quote: { select: { id: true, quoteNumber: true, version: true } },
   materials: true,
 } as const;
 
@@ -90,6 +91,7 @@ export class ServiceOrdersService {
       where,
       pagination,
       { createdAt: 'desc' },
+      SERVICE_ORDER_INCLUDE,
     );
 
     // Convert decimals for all items
