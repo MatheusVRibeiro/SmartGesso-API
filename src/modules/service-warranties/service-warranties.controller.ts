@@ -12,6 +12,8 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
+import { PermissionsGuard } from '../core/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { ServiceWarrantiesService } from './service-warranties.service';
 import { CreateServiceWarrantyDto } from './dto/create-service-warranty.dto';
 import { UpdateServiceWarrantyStatusDto } from './dto/update-service-warranty-status.dto';
@@ -21,7 +23,7 @@ import { UpdateServiceReturnStatusDto } from './dto/update-service-return-status
 @ApiTags('service-warranties')
 @ApiBearerAuth()
 @Controller('service-warranties')
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard, PermissionsGuard)
 export class ServiceWarrantiesController {
   constructor(
     private readonly serviceWarrantiesService: ServiceWarrantiesService,
@@ -30,6 +32,7 @@ export class ServiceWarrantiesController {
   // ── Warranty (nested under service-orders) ──────────────────────────
 
   @Get('service-orders/:serviceOrderId/warranty')
+  @RequirePermissions('services.read')
   listWarranties(
     @Req() r: any,
     @Param('serviceOrderId') serviceOrderId: string,
@@ -41,6 +44,7 @@ export class ServiceWarrantiesController {
   }
 
   @Post('service-orders/:serviceOrderId/warranty')
+  @RequirePermissions('services.update')
   createWarranty(
     @Req() r: any,
     @Param('serviceOrderId') serviceOrderId: string,
@@ -56,6 +60,7 @@ export class ServiceWarrantiesController {
   // ── Warranty status (top-level) ─────────────────────────────────────
 
   @Patch('service-warranties/:id/status')
+  @RequirePermissions('services.update')
   updateWarrantyStatus(
     @Req() r: any,
     @Param('id') id: string,
@@ -71,6 +76,7 @@ export class ServiceWarrantiesController {
   // ── Returns (nested under service-orders) ───────────────────────────
 
   @Get('service-orders/:serviceOrderId/returns')
+  @RequirePermissions('services.read')
   listReturns(
     @Req() r: any,
     @Param('serviceOrderId') serviceOrderId: string,
@@ -82,6 +88,7 @@ export class ServiceWarrantiesController {
   }
 
   @Post('service-orders/:serviceOrderId/returns')
+  @RequirePermissions('services.update')
   createReturn(
     @Req() r: any,
     @Param('serviceOrderId') serviceOrderId: string,
@@ -97,6 +104,7 @@ export class ServiceWarrantiesController {
   // ── Return status (top-level) ───────────────────────────────────────
 
   @Patch('service-returns/:id/status')
+  @RequirePermissions('services.update')
   updateReturnStatus(
     @Req() r: any,
     @Param('id') id: string,
