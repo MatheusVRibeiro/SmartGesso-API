@@ -4,6 +4,7 @@ import * as argon2 from 'argon2';
 import { randomUUID } from 'node:crypto';
 import { PrismaRepositoryService } from './database/prisma-repository.service';
 import { PrismaService } from './database/prisma.service';
+import { CompanyFeaturesService } from './modules/core/services/company-features.service';
 
 const ACTIVE_ACCESS_STATUSES: SubscriptionStatus[] = [
   'TRIAL',
@@ -17,6 +18,7 @@ export class BusinessService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly repository: PrismaRepositoryService,
+    private readonly companyFeatures: CompanyFeaturesService,
   ) {}
 
   async createCompany(dto: any) {
@@ -76,7 +78,6 @@ export class BusinessService {
         email: dto.email,
         phone: dto.phone,
         whatsapp: dto.whatsapp,
-        status: dto.status,
         timezone: dto.timezone,
       },
     });
@@ -392,6 +393,14 @@ export class BusinessService {
         },
       });
     });
+  }
+
+  /**
+   * Features efetivas da empresa (plan.features + overrides) — ETAPA 13.
+   * Delega para CompanyFeaturesService (resolução canônica em modules/core).
+   */
+  async effectiveFeatures(companyId: string): Promise<string[]> {
+    return this.companyFeatures.getEffectiveFeatures(companyId);
   }
 
   async accessStatus(companyId: string) {

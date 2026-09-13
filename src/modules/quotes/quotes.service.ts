@@ -1,13 +1,22 @@
 import {
   BadRequestException,
-  ConflictException,
+  GoneException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { Prisma, QuoteStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { CompanySequenceService, SEQUENCE_TYPES } from '../core/services/company-sequence.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../notifications/push.service';
 import { CreateQuoteDto, QuoteItemDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
+import { CreatePublicShareDto } from './dto/create-public-share.dto';
+import { PaginationDto, PaginatedResponseDto } from '../../common/dto/pagination.dto';
+import { paginate } from '../../common/utils/paginate';
 
 const QUOTE_INCLUDE = {
   client: { select: { id: true, name: true } },
@@ -42,7 +51,15 @@ function parseDateInput(value?: string | null): Date | undefined {
 
 @Injectable()
 export class QuotesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(QuotesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sequenceService: CompanySequenceService,
+    private readonly auditLogService: AuditLogService,
+    private readonly notificationsService: NotificationsService,
+    private readonly pushService: PushService,
+  ) {}
 
   async create(companyId: string, dto: CreateQuoteDto) {
     await this.ensureClientBelongsToCompany(companyId, dto.clientId);
@@ -103,7 +120,12 @@ export class QuotesService {
     });
   }
 
-  async findAll(companyId: string, search?: string, status?: QuoteStatus) {
+  async findAll(
+    companyId: string,
+    pagination: PaginationDto,
+    search?: string,
+    status?: QuoteStatus,
+  ): Promise<PaginatedResponseDto<any>> {
     const where: Prisma.QuoteWhereInput = {
       companyId,
       deletedAt: null,
@@ -118,22 +140,27 @@ export class QuotesService {
         : {}),
     };
 
-    const quotes = await this.prisma.quote.findMany({
+    const result = await paginate(
+      this.prisma.quote,
       where,
-      include: {
-        client: { select: { id: true, name: true } },
+      pagination,
+      { createdAt: 'desc' },
+      {
+        client: { select: { id: true, name: true, phone: true } },
         work: { select: { id: true, name: true } },
       },
-      orderBy: { createdAt: 'desc' },
-    });
+    );
 
-    return quotes.map((q) => ({
+    // Convert decimals for all items
+    result.data = result.data.map((q: any) => ({
       ...q,
       subtotal: Number(q.subtotal),
       discount: Number(q.discount),
       marginPct: Number(q.marginPct),
       total: Number(q.total),
     }));
+
+    return result;
   }
 
   async findOne(companyId: string, id: string) {
@@ -148,18 +175,28 @@ export class QuotesService {
   async update(companyId: string, id: string, dto: UpdateQuoteDto) {
     const existing = await this.findOne(companyId, id);
 
+    // Verificar se existe uma versão mais recente (proteção do original)
+    const latestVersion = await this.prisma.quote.findFirst({
+      where: {
+        companyId,
+        quoteNumber: existing.quoteNumber,
+        deletedAt: null,
+      },
+      orderBy: { version: 'desc' },
+      select: { version: true, id: true },
+    });
+
+    if (latestVersion && latestVersion.version > existing.version) {
+      throw new BadRequestException(
+        `Não é possível alterar orçamento v${existing.version}: já existe versão mais recente (v${latestVersion.version})`,
+      );
+    }
+
     if (dto.clientId) {
       await this.ensureClientBelongsToCompany(companyId, dto.clientId);
     }
     if (dto.workId) {
       await this.ensureWorkBelongsToCompany(companyId, dto.workId);
-    }
-
-    // Se items foram enviados, substitui todos
-    if (dto.items) {
-      await this.prisma.quoteItem.deleteMany({
-        where: { quoteId: id },
-      });
     }
 
     const items: QuoteItemDto[] = dto.items || existing.items.map((i) => ({
@@ -179,6 +216,13 @@ export class QuotesService {
       dto.status && dto.status !== existing.status ? dto.status : undefined;
 
     return this.prisma.$transaction(async (tx) => {
+      // Se items foram enviados, substitui todos (dentro da transação)
+      if (dto.items) {
+        await tx.quoteItem.deleteMany({
+          where: { quoteId: id },
+        });
+      }
+
       const updated = await tx.quote.update({
         where: { id },
         data: {
@@ -235,7 +279,25 @@ export class QuotesService {
   }
 
   async remove(companyId: string, id: string) {
-    await this.findOne(companyId, id);
+    const existing = await this.findOne(companyId, id);
+
+    // Verificar se existe uma versão mais recente (proteção do original)
+    const latestVersion = await this.prisma.quote.findFirst({
+      where: {
+        companyId,
+        quoteNumber: existing.quoteNumber,
+        deletedAt: null,
+      },
+      orderBy: { version: 'desc' },
+      select: { version: true, id: true },
+    });
+
+    if (latestVersion && latestVersion.version > existing.version) {
+      throw new BadRequestException(
+        `Não é possível excluir orçamento v${existing.version}: já existe versão mais recente (v${latestVersion.version})`,
+      );
+    }
+
     return this.prisma.quote.update({
       where: { id },
       data: { deletedAt: new Date() },
@@ -245,15 +307,50 @@ export class QuotesService {
   async createVersion(companyId: string, id: string) {
     const original = await this.findOne(companyId, id);
 
-    const nextQuoteNumber = await this.getNextQuoteNumber(companyId);
+    // Verificar se já existe uma versão mais recente (proteção contra concorrência)
+    const latestVersion = await this.prisma.quote.findFirst({
+      where: {
+        companyId,
+        quoteNumber: original.quoteNumber,
+        deletedAt: null,
+      },
+      orderBy: { version: 'desc' },
+      select: { version: true, id: true },
+    });
+
+    // Se existe uma versão mais recente que não é a original, usar ela como base
+    // Isso garante que sempre criamos a próxima versão a partir da mais atual
+    if (latestVersion && latestVersion.version > original.version) {
+      throw new BadRequestException(
+        `Já existe uma versão mais recente (v${latestVersion.version}) para este orçamento`,
+      );
+    }
+
     const nextVersion = original.version + 1;
+
+    // Verificar se já existe esta versão (pode ter sido criada por outra requisição)
+    const existingVersion = await this.prisma.quote.findFirst({
+      where: {
+        companyId,
+        quoteNumber: original.quoteNumber,
+        version: nextVersion,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (existingVersion) {
+      throw new BadRequestException(
+        `A versão ${nextVersion} já foi criada para este orçamento`,
+      );
+    }
 
     return this.prisma.quote.create({
       data: {
         companyId,
         clientId: original.clientId,
         workId: original.workId,
-        quoteNumber: nextQuoteNumber,
+        quoteNumber: original.quoteNumber, // Mantém o mesmo número
         version: nextVersion,
         status: 'RASCUNHO',
         subtotal: original.subtotal,
@@ -294,63 +391,178 @@ export class QuotesService {
     });
   }
 
-  /** Aprova o orçamento: status APROVADO + registro de histórico. */
-  async approve(companyId: string, id: string) {
+  /**
+   * Cria ou retorna a ServiceOrder vinculada ao orçamento.
+   * Função interna idempotente: se já existe OS para o quote, retorna-a.
+   * Usada tanto por approve() quanto por convertToService() (deprecated).
+   */
+  private async ensureServiceOrderFromQuote(
+    tx: any,
+    companyId: string,
+    quote: { id: string; clientId: string; workId: string | null; startDate: Date | null; total: any; observations: string | null },
+  ) {
+    // 1. Verificar se já existe ServiceOrder para este orçamento (idempotência)
+    const existingOrder = await tx.serviceOrder.findFirst({
+      where: { companyId, quoteId: quote.id },
+      include: SERVICE_ORDER_INCLUDE,
+    });
+    if (existingOrder) {
+      // OS já existia (2ª aprovação): garante convertedAt mesmo assim.
+      await this.markQuoteAsConverted(tx, quote.id);
+      return { serviceOrder: existingOrder, created: false };
+    }
+
+    // 2. Gerar código sequencial atomicamente (Etapa 4 — numeração concorrente segura)
+    const code = await this.sequenceService.increment(
+      companyId,
+      SEQUENCE_TYPES.SERVICE_ORDER,
+      tx,
+    );
+
+    // 3. Criar a ServiceOrder.
+    // Sob concorrência, outra request pode criar a OS entre o findFirst acima
+    // e o create abaixo; o UNIQUE (companyId, quoteId) rejeita com P2002 e a
+    // OS já criada pelo concorrente é retornada (idempotência sob race).
+    let serviceOrder;
+    try {
+      serviceOrder = await tx.serviceOrder.create({
+        data: {
+          companyId,
+          clientId: quote.clientId,
+          workId: quote.workId ?? undefined,
+          quoteId: quote.id,
+          code,
+          status: 'PENDENTE',
+          scheduledDate: quote.startDate ? new Date(quote.startDate) : undefined,
+          saleValue: Number(quote.total),
+          observations: quote.observations ?? undefined,
+        },
+        include: SERVICE_ORDER_INCLUDE,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const racedOrder = await tx.serviceOrder.findFirst({
+          where: { companyId, quoteId: quote.id },
+          include: SERVICE_ORDER_INCLUDE,
+        });
+        if (racedOrder) {
+          await this.markQuoteAsConverted(tx, quote.id);
+          return { serviceOrder: racedOrder, created: false };
+        }
+      }
+      // P2002 sem OS correspondente (improvável) ou qualquer outro erro: não mascarar.
+      throw error;
+    }
+
+    // 4. Marcar orçamento como convertido
+    await this.markQuoteAsConverted(tx, quote.id);
+
+    return { serviceOrder, created: true };
+  }
+
+  /** Marca o orçamento como convertido (convertedAt). Idempotente por natureza. */
+  private async markQuoteAsConverted(tx: any, quoteId: string): Promise<void> {
+    await tx.quote.update({
+      where: { id: quoteId },
+      data: { convertedAt: new Date() },
+    });
+  }
+
+  /** Aprova o orçamento: status APROVADO + registro de histórico + criação idempotente de OS. */
+  async approve(companyId: string, id: string, userId?: string) {
     const quote = await this.findOne(companyId, id);
 
-    if (quote.status === 'APROVADO') {
-      return quote;
-    }
     if (quote.status === 'CANCELADO') {
       throw new BadRequestException(
         'Orçamento cancelado não pode ser aprovado',
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.quote.update({
-        where: { id },
-        data: { status: 'APROVADO' },
-        include: QUOTE_INCLUDE,
-      });
-      await tx.quoteHistory.create({
-        data: { quoteId: id, status: 'APROVADO', note: 'Orçamento aprovado' },
-      });
+    // Se já está APROVADO, retorna sem duplicar histórico
+    const alreadyApproved = quote.status === 'APROVADO';
 
-      // V3 §28: orçamento aprovado → cria o serviço automaticamente,
-      // reaproveitando cliente, obra, prazo e valor total.
-      const lastOrder = await tx.serviceOrder.findFirst({
-        where: { companyId },
-        orderBy: { code: 'desc' },
-        select: { code: true },
-      });
-      const code = (lastOrder?.code ?? 0) + 1;
-      await tx.serviceOrder.create({
-        data: {
-          companyId,
+    const result = await this.prisma.$transaction(async (tx) => {
+      let updated: QuoteWithRelations;
+
+      if (!alreadyApproved) {
+        updated = await tx.quote.update({
+          where: { id },
+          data: { status: 'APROVADO' },
+          include: QUOTE_INCLUDE,
+        });
+        await tx.quoteHistory.create({
+          data: { quoteId: id, status: 'APROVADO', note: 'Orçamento aprovado' },
+        });
+      } else {
+        // quote já está no formato correto (convertDecimals aplicado por findOne)
+        updated = quote as unknown as QuoteWithRelations;
+      }
+
+      // Criar ou retornar ServiceOrder existente (idempotente)
+      const { serviceOrder, created: serviceOrderCreated } =
+        await this.ensureServiceOrderFromQuote(tx, companyId, {
+          id: updated.id,
           clientId: updated.clientId,
-          workId: updated.workId ?? undefined,
-          quoteId: id,
-          code,
-          status: 'PENDENTE',
-          scheduledDate: updated.startDate
-            ? new Date(updated.startDate)
-            : undefined,
-          saleValue: Number(updated.total),
-          observations: updated.observations ?? undefined,
+          workId: updated.workId,
+          startDate: updated.startDate,
+          total: updated.total,
+          observations: updated.observations,
+        });
+
+      return {
+        quote: this.convertDecimals(updated),
+        serviceOrder: this.convertServiceOrderDecimals(serviceOrder),
+        serviceOrderCreated,
+      };
+    });
+
+    // Log audit event
+    await this.auditLogService.log({
+      companyId,
+      userId,
+      action: 'APPROVE',
+      entity: 'Quote',
+      entityId: id,
+      details: {
+        quoteNumber: result.quote.quoteNumber,
+        status: 'APROVADO',
+        total: result.quote.total,
+      },
+    });
+
+    // Notificação + push (não deve quebrar a aprovação em caso de falha)
+    try {
+      await this.notificationsService.create(companyId, {
+        type: 'QUOTE_APPROVED',
+        title: 'Orçamento aprovado',
+        body: `Orçamento #${result.quote.quoteNumber} aprovado — Serviço criado`,
+        data: {
+          quoteId: result.quote.id,
+          quoteNumber: result.quote.quoteNumber,
+          serviceOrderId: result.serviceOrder.id,
         },
       });
-      await tx.quote.update({
-        where: { id },
-        data: { convertedAt: new Date() },
+      await this.pushService.sendToCompany(companyId, {
+        title: 'Orçamento aprovado',
+        body: `Orçamento #${result.quote.quoteNumber} aprovado — Serviço criado`,
+        data: { route: `/servicos/${result.serviceOrder.id}` },
       });
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao notificar aprovação do orçamento ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
-      return this.convertDecimals(updated);
-    });
+    return result;
   }
 
   /** Rejeita o orçamento: status REJEITADO + registro de histórico. */
-  async reject(companyId: string, id: string, note?: string) {
+  async reject(companyId: string, id: string, note?: string, userId?: string) {
     const quote = await this.findOne(companyId, id);
 
     if (quote.status === 'REJEITADO') {
@@ -362,7 +574,7 @@ export class QuotesService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.quote.update({
         where: { id },
         data: { status: 'REJEITADO' },
@@ -377,6 +589,260 @@ export class QuotesService {
       });
       return this.convertDecimals(updated);
     });
+
+    // Log audit event
+    await this.auditLogService.log({
+      companyId,
+      userId,
+      action: 'REJECT',
+      entity: 'Quote',
+      entityId: id,
+      details: {
+        quoteNumber: result.quoteNumber,
+        status: 'REJEITADO',
+        note: note ?? 'Orçamento não aprovado',
+      },
+    });
+
+    // Notificação + push (não deve quebrar a rejeição em caso de falha)
+    try {
+      await this.notificationsService.create(companyId, {
+        type: 'QUOTE_REJECTED',
+        title: 'Orçamento rejeitado',
+        body: `Orçamento #${result.quoteNumber} rejeitado`,
+        data: { quoteId: id, quoteNumber: result.quoteNumber },
+      });
+      await this.pushService.sendToCompany(companyId, {
+        title: 'Orçamento rejeitado',
+        body: `Orçamento #${result.quoteNumber} rejeitado`,
+        data: { route: `/orcamentos/${id}` },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao notificar rejeição do orçamento ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return result;
+  }
+
+  /**
+   * Cria o deep link público do orçamento (token aleatório de 32 bytes).
+   * Atualiza publicToken + sharedAt e define validUntil (+7 dias) quando
+   * ainda não definido. Reaproveitar o mesmo token: o share é idempotente
+   * — se o orçamento já tem publicToken, retorna o link existente.
+   */
+  async share(companyId: string, id: string, dto?: CreatePublicShareDto) {
+    const quote = await this.findOne(companyId, id);
+
+    if (quote.publicToken) {
+      return {
+        publicToken: quote.publicToken,
+        url: `https://app.smartgesso.com.br/o/${quote.publicToken}`,
+      };
+    }
+
+    const publicToken = randomBytes(32).toString('hex');
+    const expiryDays = dto?.expiryDays ?? 7;
+    const validUntil = quote.validUntil
+      ? quote.validUntil
+      : new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
+
+    const updated = await this.prisma.quote.update({
+      where: { id },
+      data: { publicToken, sharedAt: new Date(), validUntil },
+    });
+
+    return {
+      publicToken: updated.publicToken,
+      url: `https://app.smartgesso.com.br/o/${updated.publicToken}`,
+    };
+  }
+
+  /**
+   * Busca os dados PÚBLICOS do orçamento pelo token (sem autenticação).
+   *
+   * Validações:
+   *  - token inexistente ou orçamento excluído → 404 (não revela se existe)
+   *  - validUntil vencido → 410 Gone (link expirado)
+   *
+   * Nunca expõe dados sensíveis: sem companyId, sem CPF/documento,
+   * sem observações internas, sem endereço completo do local.
+   */
+  async findPublicByToken(token: string) {
+    const quote = await this.prisma.quote.findFirst({
+      where: { publicToken: token, deletedAt: null },
+      include: {
+        client: { select: { name: true } },
+        work: { select: { name: true } },
+        items: true,
+      },
+    });
+    if (!quote) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+
+    const now = new Date();
+    if (quote.validUntil && quote.validUntil.getTime() <= now.getTime()) {
+      throw new GoneException('Link do orçamento expirado');
+    }
+
+    return {
+      quoteNumber: quote.quoteNumber,
+      version: quote.version,
+      status: quote.status,
+      total: Number(quote.total),
+      paymentMethod: quote.paymentMethod,
+      paymentTerms: quote.paymentTerms,
+      validUntil: quote.validUntil,
+      client: { name: quote.client.name },
+      work: quote.work ? { name: quote.work.name } : null,
+      items: quote.items.map((item) => ({
+        itemType: item.itemType,
+        name: item.name,
+        description: item.description,
+        quantity: Number(item.quantity),
+        unit: item.unit,
+        unitPrice: Number(item.unitPrice),
+        total: Number(item.total),
+      })),
+    };
+  }
+
+  /**
+   * Busca orçamento pelo token público DENTRO da empresa autenticada
+   * (deep link no app: o usuário logado abre o link e o app localiza o
+   * orçamento pelo token). Verifica companyId para manter tenant isolation.
+   */
+  async findByCompanyToken(companyId: string, token: string) {
+    const quote = await this.prisma.quote.findFirst({
+      where: { publicToken: token, companyId, deletedAt: null },
+      include: {
+        client: { select: { id: true, name: true } },
+        items: true,
+      },
+    });
+
+    if (!quote) {
+      throw new NotFoundException('Orçamento não encontrado para este token');
+    }
+
+    const now = new Date();
+    if (quote.validUntil && quote.validUntil.getTime() <= now.getTime()) {
+      throw new GoneException('Link do orçamento expirado');
+    }
+
+    return quote;
+  }
+
+  /**
+   * Aprovação pública via deep link: mesma lógica de approve(), usando o
+   * companyId do próprio orçamento (o token já identifica a empresa).
+   * Cria notificação + push para o gestor ("Cliente aprovou pelo link").
+   */
+  async approvePublicByToken(token: string, ip?: string) {
+    const quote = await this.prisma.quote.findFirst({
+      where: { publicToken: token, deletedAt: null },
+      select: { id: true, companyId: true, validUntil: true, status: true },
+    });
+
+    if (!quote) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+
+    const now = new Date();
+    if (quote.validUntil && quote.validUntil.getTime() <= now.getTime()) {
+      throw new GoneException('Link do orçamento expirado');
+    }
+
+    const result = await this.approve(quote.companyId, quote.id);
+
+    // Notificação + push específicas do deep link (não deve quebrar a aprovação)
+    try {
+      await this.notificationsService.create(quote.companyId, {
+        type: 'QUOTE_APPROVED',
+        title: 'Cliente aprovou pelo link',
+        body: `Orçamento #${result.quote.quoteNumber} aprovado pelo cliente via deep link`,
+        data: {
+          quoteId: result.quote.id,
+          quoteNumber: result.quote.quoteNumber,
+          serviceOrderId: result.serviceOrder.id,
+          source: 'deep-link',
+        },
+      });
+      await this.pushService.sendToCompany(quote.companyId, {
+        title: 'Cliente aprovou pelo link',
+        body: `Orçamento #${result.quote.quoteNumber} aprovado pelo cliente via deep link`,
+        data: { route: `/servicos/${result.serviceOrder.id}` },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao notificar aprovação pública do orçamento ${quote.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    await this.auditLogService.log({
+      companyId: quote.companyId,
+      action: 'APPROVE_PUBLIC',
+      entity: 'Quote',
+      entityId: quote.id,
+      details: {
+        quoteNumber: result.quote.quoteNumber,
+        source: 'deep-link',
+        ip: ip ?? null,
+      },
+    });
+
+    return {
+      status: result.quote.status,
+      serviceOrderId: result.serviceOrder.id,
+      serviceOrderCreated: result.serviceOrderCreated,
+    };
+  }
+
+  /**
+   * Rejeição pública via deep link: mesma lógica de reject(), usando o
+   * companyId do próprio orçamento. A nota é obrigatória (validada no DTO).
+   */
+  async rejectPublicByToken(token: string, note: string) {
+    const trimmedNote = note?.trim();
+    if (!trimmedNote) {
+      throw new BadRequestException('A nota de rejeição é obrigatória');
+    }
+
+    const quote = await this.prisma.quote.findFirst({
+      where: { publicToken: token, deletedAt: null },
+      select: { id: true, companyId: true, validUntil: true, status: true },
+    });
+
+    if (!quote) {
+      throw new NotFoundException('Orçamento não encontrado');
+    }
+
+    const now = new Date();
+    if (quote.validUntil && quote.validUntil.getTime() <= now.getTime()) {
+      throw new GoneException('Link do orçamento expirado');
+    }
+
+    const result = await this.reject(quote.companyId, quote.id, trimmedNote);
+
+    await this.auditLogService.log({
+      companyId: quote.companyId,
+      action: 'REJECT_PUBLIC',
+      entity: 'Quote',
+      entityId: quote.id,
+      details: {
+        quoteNumber: result.quoteNumber,
+        source: 'deep-link',
+        note: trimmedNote,
+      },
+    });
+
+    return { status: result.status, quoteNumber: result.quoteNumber };
   }
 
   /** Duplica o orçamento: novo quoteNumber, status RASCUNHO, copia itens/local/prazo. */
@@ -432,9 +898,9 @@ export class QuotesService {
   }
 
   /**
-   * Converte um orçamento APROVADO em ordem de serviço, reaproveitando
-   * cliente, obra, observações, prazo (startDate) e valor total do orçamento.
-   * Marca o orçamento como convertido (convertedAt) — 409 se já convertido.
+   * Converte um orçamento APROVADO em ordem de serviço.
+   * @deprecated Use POST /quotes/:id/approve (idempotente). Este endpoint será
+   * removido em versão futura. Mantido temporariamente para compatibilidade.
    */
   async convertToService(companyId: string, id: string) {
     const quote = await this.prisma.quote.findFirst({
@@ -442,55 +908,29 @@ export class QuotesService {
       include: QUOTE_INCLUDE,
     });
     if (!quote) throw new NotFoundException('Orçamento não encontrado');
-    if (quote.convertedAt) {
-      throw new ConflictException('Orçamento já convertido em serviço');
-    }
     if (quote.status !== 'APROVADO') {
       throw new BadRequestException(
         'Somente orçamentos aprovados podem ser convertidos em serviço',
       );
     }
 
-    const serviceOrder = await this.prisma.$transaction(async (tx) => {
-      const lastOrder = await tx.serviceOrder.findFirst({
-        where: { companyId },
-        orderBy: { code: 'desc' },
-        select: { code: true },
-      });
-      const code = (lastOrder?.code ?? 0) + 1;
-
-      const created = await tx.serviceOrder.create({
-        data: {
-          companyId,
+    const { serviceOrder, created } = await this.prisma.$transaction(
+      async (tx) => {
+        return this.ensureServiceOrderFromQuote(tx, companyId, {
+          id: quote.id,
           clientId: quote.clientId,
-          workId: quote.workId ?? undefined,
-          quoteId: quote.id,
-          code,
-          status: 'PENDENTE',
-          scheduledDate: quote.startDate
-            ? new Date(quote.startDate)
-            : undefined,
-          saleValue: Number(quote.total),
-          observations: quote.observations ?? undefined,
-        },
-        include: SERVICE_ORDER_INCLUDE,
-      });
-
-      // Marca como convertido de forma atômica (evita conversão dupla em corrida).
-      const marked = await tx.quote.updateMany({
-        where: { id: quote.id, convertedAt: null },
-        data: { convertedAt: new Date() },
-      });
-      if (marked.count === 0) {
-        throw new ConflictException('Orçamento já convertido em serviço');
-      }
-
-      return created;
-    });
+          workId: quote.workId,
+          startDate: quote.startDate,
+          total: quote.total,
+          observations: quote.observations,
+        });
+      },
+    );
 
     return {
       serviceOrderId: serviceOrder.id,
       ...this.convertServiceOrderDecimals(serviceOrder),
+      created,
     };
   }
 
@@ -532,12 +972,7 @@ export class QuotesService {
   }
 
   private async getNextQuoteNumber(companyId: string): Promise<number> {
-    const lastQuote = await this.prisma.quote.findFirst({
-      where: { companyId },
-      orderBy: { quoteNumber: 'desc' },
-      select: { quoteNumber: true },
-    });
-    return (lastQuote?.quoteNumber ?? 0) + 1;
+    return this.sequenceService.increment(companyId, SEQUENCE_TYPES.QUOTE);
   }
 
   private convertDecimals(quote: QuoteWithRelations) {

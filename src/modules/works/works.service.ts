@@ -8,6 +8,7 @@ const WORK_INCLUDE = {
   client: { select: { id: true, name: true } },
 } as const;
 
+/** @deprecated Service legado — mantido para compatibilidade. */
 @Injectable()
 export class WorksService {
   constructor(private readonly prisma: PrismaService) {}

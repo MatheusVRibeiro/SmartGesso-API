@@ -5,3 +5,6 @@ coverage
 openapi.json
 .prisma
 .DS_Store
+attachments-storage
+uploads
+private-attachments

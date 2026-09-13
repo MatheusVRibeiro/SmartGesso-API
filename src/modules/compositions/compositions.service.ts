@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, MeasurementApplicationType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
+  CalculateFromQuoteDto,
   CalculateMaterialsDto,
   CreateCompositionDto,
   FormulaBasedOn,
@@ -144,13 +145,78 @@ export class CompositionsService {
   // ------------------------------------------------------------------
 
   async calculate(companyId: string, dto: CalculateMaterialsDto) {
+    return this._calculateMaterials(companyId, dto.applicationType, dto.measurements);
+  }
+
+  /**
+   * Calcula materiais a partir das medições armazenadas nos ambientes
+   * (QuoteEnvironment) de um orçamento — sem depender de Work.
+   *
+   * Busca todas as medições ativas de todos os ambientes do orçamento
+   * informado e reutiliza a mesma lógica de cálculo da composição.
+   */
+  async calculateFromQuote(companyId: string, dto: CalculateFromQuoteDto) {
     await this.ensureDefaultDrywall(companyId);
 
+    // Valida que o orçamento pertence à empresa ativa
+    const quote = await this.prisma.quote.findFirst({
+      where: { id: dto.quoteId, companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!quote) {
+      throw new BadRequestException(
+        'Orçamento inválido: não pertence à empresa ativa',
+      );
+    }
+
+    // Busca medições de todos os ambientes do orçamento
+    const environments = await this.prisma.quoteEnvironment.findMany({
+      where: { companyId, quoteId: dto.quoteId, deletedAt: null },
+      include: {
+        measurements: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: { order: 'asc' },
+    });
+
+    const measurements = environments.flatMap((env) =>
+      env.measurements.map((m) => ({
+        length: Number(m.length),
+        width: Number(m.width),
+        area: Number(m.area),
+        perimeter: Number(m.perimeter),
+      })),
+    );
+
+    return this._calculateMaterials(
+      companyId,
+      dto.applicationType,
+      measurements,
+    );
+  }
+
+  /**
+   * Lógica central de cálculo de materiais a partir de medições.
+   * Compartilhada por `calculate` (medições do cliente) e
+   * `calculateFromQuote` (medições dos ambientes do banco).
+   */
+  private async _calculateMaterials(
+    companyId: string,
+    applicationType: MeasurementApplicationType,
+    measurements: Array<{
+      length?: number | null;
+      width?: number | null;
+      area?: number | null;
+      perimeter?: number | null;
+    }>,
+  ) {
     // Totais a partir das medições (área derivada de length × width quando ausente)
     let areaTotal = 0;
     let perimeterTotal = 0;
     let lengthTotal = 0;
-    for (const m of dto.measurements) {
+    for (const m of measurements) {
       const area = m.area ?? (m.length != null && m.width != null ? m.length * m.width : 0);
       areaTotal += area;
       perimeterTotal += m.perimeter ?? 0;
@@ -170,7 +236,7 @@ export class CompositionsService {
     const composition = await this.prisma.composition.findFirst({
       where: {
         companyId,
-        applicationType: dto.applicationType,
+        applicationType,
         status: 'ACTIVE',
         deletedAt: null,
       },

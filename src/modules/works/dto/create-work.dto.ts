@@ -1,7 +1,7 @@
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { WorkStatus } from '@prisma/client';
 
-/** DTO para criação de obra (work). */
+/** @deprecated DTO legado — mantido para compatibilidade. */
 export class CreateWorkDto {
   @IsString()
   @IsNotEmpty()

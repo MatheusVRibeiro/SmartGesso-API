@@ -114,6 +114,7 @@ model Company {
   measurements          Measurement[]
   compositions          Composition[]
   quotes                Quote[]
+  quoteEnvironments     QuoteEnvironment[]
   payments              Payment[]
   expenses              Expense[]
   serviceOrders         ServiceOrder[]
@@ -122,6 +123,37 @@ model Company {
   inventoryMovements    InventoryMovement[]
   pushTokens            PushToken[]
   notifications         Notification[]
+  companySequences      CompanySequence[]
+  serviceAdditionals    ServiceAdditional[]
+  suppliers             Supplier[]
+  purchaseOrders        PurchaseOrder[]
+  attachments           Attachment[]
+  serviceWarranties     ServiceWarranty[]
+  serviceReturns        ServiceReturn[]
+  quoteFollowUps        QuoteFollowUp[]
+  featureOverrides      CompanyFeatureOverride[]
+  serviceReceivables    ServiceReceivable[]
+  companyGoals          CompanyGoal[]
+}
+
+// ─── ETAPA 4 — Numeração concorrente segura ────────────────────────────────
+
+enum SequenceEntityType {
+  QUOTE
+  SERVICE_ORDER
+  SERVICE_ADDITIONAL
+}
+
+model CompanySequence {
+  companyId    String              @db.Char(36)
+  entityType   SequenceEntityType
+  currentValue Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  company      Company             @relation(fields: [companyId], references: [id])
+
+  @@id([companyId, entityType])
+  @@index([companyId])
 }
 
 model CompanyAddress {
@@ -264,6 +296,11 @@ model User {
   deletedAt       DateTime?
   members         CompanyMember[]
   pushTokens      PushToken[]
+  createdServiceAdditionals ServiceAdditional[] @relation("CreatedServiceAdditionals")
+  createdQuoteFollowUps     QuoteFollowUp[]     @relation("CreatedQuoteFollowUps")
+  createdCompanyGoals       CompanyGoal[]       @relation("CreatedCompanyGoals")
+  attachments               Attachment[]
+  updatedFeatureOverrides   CompanyFeatureOverride[] @relation("UpdatedCompanyFeatureOverrides")
 }
 
 model CompanyMember {
@@ -314,13 +351,14 @@ model OwnerInvitation {
 model AuditLog {
   id        String   @id @default(uuid()) @db.Char(36)
   companyId String?  @db.Char(36)
-  actorType String
-  actorId   String?
+  userId    String?  @db.Char(36)
   action    String
   entity    String
   entityId  String?
-  metadata  Json?
+  details   Json?
   createdAt DateTime @default(now())
+
+  @@index([companyId, createdAt])
 }
 
 // ─── Fase 2 — Clientes e Catálogo ──────────────────────────────────────────
@@ -470,31 +508,54 @@ enum MeasurementApplicationType {
 }
 
 model Measurement {
-  id              String                     @id @default(uuid()) @db.Char(36)
-  companyId       String                     @db.Char(36)
-  workId          String                     @db.Char(36)
-  environmentName String
-  applicationType MeasurementApplicationType @default(DRYWALL)
-  length          Decimal?                   @db.Decimal(15, 2)
-  width           Decimal?                   @db.Decimal(15, 2)
-  ceilingHeight   Decimal?                   @db.Decimal(15, 2)
-  area            Decimal?                   @db.Decimal(15, 2)
-  perimeter       Decimal?                   @db.Decimal(15, 2)
-  doors           Int                        @default(0)
-  windows         Int                        @default(0)
-  cutouts         Int                        @default(0)
-  fixtures        Int                        @default(0)
-  hasCove         Boolean                    @default(false)
-  hasDropCeiling  Boolean                    @default(false)
-  observations    String?                    @db.Text
-  createdAt       DateTime                   @default(now())
-  updatedAt       DateTime                   @updatedAt
-  deletedAt       DateTime?
-  company         Company                    @relation(fields: [companyId], references: [id])
-  work            Work                       @relation(fields: [workId], references: [id])
+  id                   String                     @id @default(uuid()) @db.Char(36)
+  companyId            String                     @db.Char(36)
+  workId               String?                    @db.Char(36)
+  quoteEnvironmentId   String?                    @db.Char(36)
+  environmentName      String
+  applicationType      MeasurementApplicationType @default(DRYWALL)
+  length               Decimal?                   @db.Decimal(15, 2)
+  width                Decimal?                   @db.Decimal(15, 2)
+  ceilingHeight        Decimal?                   @db.Decimal(15, 2)
+  area                 Decimal?                   @db.Decimal(15, 2)
+  perimeter            Decimal?                   @db.Decimal(15, 2)
+  doors                Int                        @default(0)
+  windows              Int                        @default(0)
+  cutouts              Int                        @default(0)
+  fixtures             Int                        @default(0)
+  hasCove              Boolean                    @default(false)
+  hasDropCeiling       Boolean                    @default(false)
+  observations         String?                    @db.Text
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  deletedAt            DateTime?
+  company              Company                    @relation(fields: [companyId], references: [id])
+  work                 Work?                      @relation(fields: [workId], references: [id])
+  quoteEnvironment     QuoteEnvironment?          @relation(fields: [quoteEnvironmentId], references: [id])
 
   @@index([companyId])
   @@index([workId])
+  @@index([quoteEnvironmentId])
+}
+
+// ─── ETAPA 6 — Ambientes de orçamento (sem Work obrigatório) ──────────────────
+
+model QuoteEnvironment {
+  id                String        @id @default(uuid()) @db.Char(36)
+  companyId         String        @db.Char(36)
+  quoteId           String        @db.Char(36)
+  name              String
+  description       String?       @db.Text
+  order             Int           @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
+  company           Company       @relation(fields: [companyId], references: [id])
+  quote             Quote         @relation(fields: [quoteId], references: [id])
+  measurements      Measurement[]
+
+  @@index([companyId])
+  @@index([quoteId])
 }
 
 enum CompositionStatus {
@@ -587,6 +648,8 @@ model Quote {
   measurementDate DateTime?
   warrantyDays    Int?
   validUntil      DateTime?
+  publicToken     String?            @unique
+  sharedAt        DateTime?
   observations    String?            @db.Text
   convertedAt     DateTime?
   createdAt       DateTime           @default(now())
@@ -599,6 +662,8 @@ model Quote {
   history         QuoteHistory[]
   scheduleEvents  ScheduleEvent[]
   serviceOrders   ServiceOrder[]
+  environments    QuoteEnvironment[]
+  quoteFollowUps  QuoteFollowUp[]
 
   @@unique([companyId, quoteNumber, version])
   @@index([companyId])
@@ -693,6 +758,30 @@ enum ServiceOrderStatus {
   CANCELADA
 }
 
+// ─── ETAPA 9 — Aditivos de Serviço ──────────────────────────────────────────
+
+enum ServiceAdditionalStatus {
+  DRAFT
+  SENT
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// ─── ETAPA 11 — Garantia e Retorno de Serviço ────────────────────────────────
+
+enum ServiceWarrantyStatus {
+  ACTIVE
+  EXPIRED
+  CLOSED
+}
+
+enum ServiceReturnStatus {
+  OPEN
+  RESOLVED
+  CLOSED
+}
+
 // ─── Fase 7 — Estoque (movimentos de inventário) ───────────────────────
 
 enum InventoryMovementType {
@@ -720,6 +809,9 @@ model ServiceOrder {
   profit             Decimal?               @db.Decimal(15, 2)
   observations       String?                @db.Text
   checklist          Json?
+  pauseReason        String?
+  etapas             Json?
+  needsProduction    Boolean                @default(false)
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   deletedAt          DateTime?
@@ -730,8 +822,16 @@ model ServiceOrder {
   materials          ServiceOrderMaterial[]
   scheduleEvents     ScheduleEvent[]
   inventoryMovements InventoryMovement[]
+  expenses           Expense[]
+  payments           Payment[]
+  serviceAdditionals ServiceAdditional[]
+  purchaseOrders     PurchaseOrder[]
+  serviceWarranties  ServiceWarranty[]
+  serviceReturns     ServiceReturn[]
+  receivables        ServiceReceivable[]
 
   @@unique([companyId, code])
+  @@unique([companyId, quoteId])
   @@index([companyId])
   @@index([clientId])
   @@index([workId])
@@ -749,6 +849,78 @@ model ServiceOrderMaterial {
   serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id])
 
   @@index([serviceOrderId])
+}
+
+// ─── ETAPA 9 — Aditivos de Serviço ──────────────────────────────────────────
+
+model ServiceAdditional {
+  id             String                   @id @default(uuid()) @db.Char(36)
+  companyId      String                   @db.Char(36)
+  serviceOrderId String                   @db.Char(36)
+  code           Int
+  description    String
+  amount         Decimal                  @db.Decimal(15, 2)
+  estimatedCost  Decimal?                 @db.Decimal(15, 2)
+  status         ServiceAdditionalStatus  @default(DRAFT)
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  notes          String?                  @db.Text
+  createdById    String?                  @db.Char(36)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  deletedAt      DateTime?
+  company        Company                  @relation(fields: [companyId], references: [id])
+  serviceOrder   ServiceOrder             @relation(fields: [serviceOrderId], references: [id])
+  createdBy      User?                    @relation("CreatedServiceAdditionals", fields: [createdById], references: [id])
+
+  @@index([companyId, serviceOrderId])
+}
+
+// ─── ETAPA 11 — Garantia e Retorno de Serviço ────────────────────────────────
+
+model ServiceWarranty {
+  id             String               @id @default(uuid()) @db.Char(36)
+  companyId      String               @db.Char(36)
+  serviceOrderId String               @db.Char(36)
+  startDate      DateTime
+  endDate        DateTime
+  notes          String?              @db.Text
+  status         ServiceWarrantyStatus @default(ACTIVE)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
+  company        Company              @relation(fields: [companyId], references: [id])
+  serviceOrder   ServiceOrder         @relation(fields: [serviceOrderId], references: [id])
+  returns        ServiceReturn[]
+
+  @@index([companyId, serviceOrderId])
+  @@index([companyId])
+  @@index([serviceOrderId])
+  @@index([status])
+}
+
+model ServiceReturn {
+  id             String               @id @default(uuid()) @db.Char(36)
+  companyId      String               @db.Char(36)
+  serviceOrderId String               @db.Char(36)
+  warrantyId     String?              @db.Char(36)
+  reason         String
+  description    String?              @db.Text
+  status         ServiceReturnStatus  @default(OPEN)
+  resolutionNote String?              @db.Text
+  resolvedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
+  company        Company              @relation(fields: [companyId], references: [id])
+  serviceOrder   ServiceOrder         @relation(fields: [serviceOrderId], references: [id])
+  warranty       ServiceWarranty?     @relation(fields: [warrantyId], references: [id])
+
+  @@index([companyId, serviceOrderId])
+  @@index([companyId])
+  @@index([serviceOrderId])
+  @@index([warrantyId])
+  @@index([status])
 }
 
 model InventoryMovement {
@@ -796,6 +968,7 @@ model Payment {
   companyId        String               @db.Char(36)
   clientId         String               @db.Char(36)
   quoteId          String?              @db.Char(36)
+  serviceOrderId   String?              @db.Char(36)
   amount           Decimal              @db.Decimal(15, 2)
   paymentMethod    PaymentMethod
   paymentDate      DateTime             @default(now())
@@ -809,10 +982,12 @@ model Payment {
   deletedAt        DateTime?
   company          Company              @relation(fields: [companyId], references: [id])
   client           Client               @relation(fields: [clientId], references: [id])
+  serviceOrder     ServiceOrder?        @relation(fields: [serviceOrderId], references: [id])
   installments     PaymentInstallment[]
 
   @@index([companyId])
   @@index([clientId])
+  @@index([serviceOrderId])
 }
 
 model PaymentInstallment {
@@ -847,20 +1022,23 @@ enum ExpenseCategory {
 }
 
 model Expense {
-  id           String          @id @default(uuid()) @db.Char(36)
-  companyId    String          @db.Char(36)
-  category     ExpenseCategory
-  description  String
-  amount       Decimal         @db.Decimal(15, 2)
-  expenseDate  DateTime        @default(now())
-  receiptUrl   String?
-  observations String?         @db.Text
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  deletedAt    DateTime?
-  company      Company         @relation(fields: [companyId], references: [id])
+  id             String          @id @default(uuid()) @db.Char(36)
+  companyId        String          @db.Char(36)
+  serviceOrderId   String?         @db.Char(36)
+  category         ExpenseCategory
+  description      String
+  amount           Decimal         @db.Decimal(15, 2)
+  expenseDate      DateTime        @default(now())
+  receiptUrl       String?
+  observations     String?         @db.Text
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+  company          Company         @relation(fields: [companyId], references: [id])
+  serviceOrder     ServiceOrder?   @relation(fields: [serviceOrderId], references: [id])
 
   @@index([companyId])
+  @@index([serviceOrderId])
 }
 
 // ─── Fase 7 — Agenda ────────────────────────────────────────────────────────
@@ -948,4 +1126,219 @@ model Notification {
 
   @@index([companyId])
   @@index([createdAt])
+}
+
+// ─── ETAPA 8 — Attachments privados com autorização ──────────────────────────
+
+model Attachment {
+  id          String   @id @default(uuid()) @db.Char(36)
+  companyId   String   @db.Char(36)
+  entityType  String   @db.VarChar(64)
+  entityId    String   @db.VarChar(64)
+  originalName String  @db.VarChar(255)
+  storagePath String   @db.VarChar(512)
+  mimeType    String   @db.VarChar(128)
+  size        Int
+  createdById String   @db.Char(36)
+  createdAt   DateTime @default(now())
+  deletedAt   DateTime?
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([companyId])
+  @@index([entityType, entityId])
+  @@index([createdById])
+}
+
+// ─── ETAPA 10 — Fornecedores e Compras ────────────────────────────────────────
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  RECEIVED
+  CANCELLED
+}
+
+model Supplier {
+  id         String    @id @default(uuid()) @db.Char(36)
+  companyId  String    @db.Char(36)
+  name       String
+  cnpjCpf    String?
+  phone      String?
+  email      String?
+  address    String?   @db.Text
+  notes      String?   @db.Text
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  company    Company   @relation(fields: [companyId], references: [id])
+  purchaseOrders PurchaseOrder[]
+
+  @@index([companyId])
+  @@index([name])
+}
+
+model PurchaseOrder {
+  id            String                 @id @default(uuid()) @db.Char(36)
+  companyId     String                 @db.Char(36)
+  supplierId    String?                @db.Char(36)
+  serviceOrderId String?               @db.Char(36)
+  status        PurchaseOrderStatus    @default(DRAFT)
+  total         Decimal                @default(0) @db.Decimal(15, 2)
+  notes         String?                @db.Text
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  deletedAt     DateTime?
+  company       Company                @relation(fields: [companyId], references: [id])
+  supplier      Supplier?              @relation(fields: [supplierId], references: [id])
+  serviceOrder  ServiceOrder?          @relation(fields: [serviceOrderId], references: [id])
+  items         PurchaseOrderItem[]
+
+  @@index([companyId])
+  @@index([supplierId])
+  @@index([serviceOrderId])
+}
+
+model PurchaseOrderItem {
+  id            String       @id @default(uuid()) @db.Char(36)
+  purchaseOrderId String     @db.Char(36)
+  catalogItemId   String?     @db.Char(36)
+  description     String
+  quantity        Decimal     @db.Decimal(15, 3)
+  unitPrice       Decimal     @default(0) @db.Decimal(15, 2)
+  total           Decimal     @default(0) @db.Decimal(15, 2)
+  createdAt       DateTime    @default(now())
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([catalogItemId])
+}
+
+// ─── ETAPA 12 — Follow-up Comercial de Orçamentos ──────────────────────────────
+
+enum QuoteFollowUpType {
+  CALL
+  WHATSAPP
+  EMAIL
+  OTHER
+}
+
+enum QuoteFollowUpStatus {
+  PENDING
+  DONE
+  CANCELLED
+}
+
+model QuoteFollowUp {
+  id          String              @id @default(uuid()) @db.Char(36)
+  companyId   String              @db.Char(36)
+  quoteId     String              @db.Char(36)
+  type        QuoteFollowUpType
+  notes       String?             @db.Text
+  scheduledAt DateTime?
+  doneAt      DateTime?
+  status      QuoteFollowUpStatus @default(PENDING)
+  createdById String?             @db.Char(36)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  deletedAt   DateTime?
+
+  company     Company             @relation(fields: [companyId], references: [id])
+  quote       Quote               @relation(fields: [quoteId], references: [id])
+  createdBy   User?               @relation("CreatedQuoteFollowUps", fields: [createdById], references: [id])
+
+  @@index([companyId, quoteId])
+  @@index([companyId])
+  @@index([quoteId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+// ─── ETAPA 13 — Feature flags por empresa ────────────────────────────────────
+
+model CompanyFeatureOverride {
+  id          String   @id @default(uuid()) @db.Char(36)
+  companyId   String   @db.Char(36)
+  feature     String
+  enabled     Boolean  @default(true)
+  updatedById String?  @db.Char(36)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id])
+  updatedBy   User?    @relation("UpdatedCompanyFeatureOverrides", fields: [updatedById], references: [id])
+
+  @@unique([companyId, feature])
+  @@index([companyId])
+}
+
+// ─── ETAPA 14 — Recebíveis e Parcelas ─────────────────────────────────────────
+
+enum ServiceReceivableStatus {
+  PENDING
+  RECEIVED
+  PARTIAL
+}
+
+enum ReceivableInstallmentStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+model ServiceReceivable {
+  id             String                   @id @default(uuid()) @db.Char(36)
+  companyId      String                   @db.Char(36)
+  serviceOrderId String                   @db.Char(36)
+  total          Decimal                  @db.Decimal(15, 2)
+  status         ServiceReceivableStatus  @default(PENDING)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  company        Company                  @relation(fields: [companyId], references: [id])
+  serviceOrder   ServiceOrder             @relation(fields: [serviceOrderId], references: [id])
+  installments   ReceivableInstallment[]
+
+  @@index([companyId, serviceOrderId])
+  @@index([companyId])
+  @@index([serviceOrderId])
+}
+
+model ReceivableInstallment {
+  id                String                        @id @default(uuid()) @db.Char(36)
+  receivableId      String                        @db.Char(36)
+  installmentNumber Int
+  amount            Decimal                       @db.Decimal(15, 2)
+  dueDate           DateTime
+  status            ReceivableInstallmentStatus   @default(PENDING)
+  paidAt            DateTime?
+  paymentId         String?                       @db.Char(36)
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  receivable        ServiceReceivable             @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+
+  @@index([receivableId])
+}
+
+// ─── Metas mensais por empresa (Metas e Performance) ────────────────────────
+
+model CompanyGoal {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  companyId          String   @db.Char(36)
+  year               Int
+  month              Int
+  targetQuoteAmount  Decimal  @db.Decimal(15, 2)
+  targetRevenue      Decimal  @db.Decimal(15, 2)
+  targetApprovedQuotes Int
+  createdById        String?  @db.Char(36)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User?   @relation("CreatedCompanyGoals", fields: [createdById], references: [id])
+
+  @@unique([companyId, year, month])
+  @@index([companyId])
 }
