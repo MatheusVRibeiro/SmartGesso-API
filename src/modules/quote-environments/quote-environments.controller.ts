@@ -12,6 +12,9 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
+import { PermissionsGuard } from '../core/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { QuoteEnvironmentsService } from './quote-environments.service';
 import { CreateQuoteEnvironmentDto } from './dto/create-quote-environment.dto';
 import { UpdateQuoteEnvironmentDto } from './dto/update-quote-environment.dto';
@@ -20,7 +23,7 @@ import { UpdateQuoteEnvironmentMeasurementDto } from './dto/update-quote-environ
 
 @ApiTags('quotes-environments')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard, PermissionsGuard)
 @Controller('quotes')
 export class QuoteEnvironmentsController {
   constructor(
@@ -30,6 +33,7 @@ export class QuoteEnvironmentsController {
   // ── Ambientes ──────────────────────────────────────────────────────
 
   @Get(':quoteId/environments')
+  @RequirePermissions('quotes.read')
   findEnvironments(
     @Req() r: any,
     @Param('quoteId') quoteId: string,
@@ -41,6 +45,7 @@ export class QuoteEnvironmentsController {
   }
 
   @Post(':quoteId/environments')
+  @RequirePermissions('quotes.update')
   createEnvironment(
     @Req() r: any,
     @Param('quoteId') quoteId: string,
@@ -54,6 +59,7 @@ export class QuoteEnvironmentsController {
   }
 
   @Patch(':quoteId/environments/:environmentId')
+  @RequirePermissions('quotes.update')
   updateEnvironment(
     @Req() r: any,
     @Param('quoteId') quoteId: string,
@@ -69,6 +75,7 @@ export class QuoteEnvironmentsController {
   }
 
   @Delete(':quoteId/environments/:environmentId')
+  @RequirePermissions('quotes.update')
   removeEnvironment(
     @Req() r: any,
     @Param('quoteId') quoteId: string,
@@ -84,6 +91,7 @@ export class QuoteEnvironmentsController {
   // ── Medições dentro de ambientes ───────────────────────────────────
 
   @Post(':quoteId/environments/:environmentId/measurements')
+  @RequirePermissions('quotes.update')
   createMeasurement(
     @Req() r: any,
     @Param('quoteId') quoteId: string,
@@ -99,6 +107,7 @@ export class QuoteEnvironmentsController {
   }
 
   @Patch(':quoteId/environments/:environmentId/measurements/:id')
+  @RequirePermissions('quotes.update')
   updateMeasurement(
     @Req() r: any,
     @Param('quoteId') quoteId: string,

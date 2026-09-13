@@ -12,6 +12,8 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
 import { CompanyAccessGuard } from '../core/guards/company-access.guard';
+import { PermissionsGuard } from '../core/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { QuoteFollowUpsService } from './quote-follow-ups.service';
 import { CreateQuoteFollowUpDto } from './dto/create-quote-follow-up.dto';
 import { UpdateQuoteFollowUpDto } from './dto/update-quote-follow-up.dto';
@@ -27,7 +29,7 @@ import { UpdateQuoteFollowUpStatusDto } from './dto/update-quote-follow-up-statu
 @ApiTags('quote-follow-ups')
 @ApiBearerAuth()
 @Controller()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard, PermissionsGuard)
 export class QuoteFollowUpsController {
   constructor(
     private readonly quoteFollowUpsService: QuoteFollowUpsService,
@@ -35,12 +37,14 @@ export class QuoteFollowUpsController {
 
   /** Lista os follow-ups de um orçamento. */
   @Get('quotes/:quoteId/follow-ups')
+  @RequirePermissions('quotes.read')
   listByQuote(@Req() r: any, @Param('quoteId') quoteId: string) {
     return this.quoteFollowUpsService.listByQuote(r.company.id, quoteId);
   }
 
   /** Cria um follow-up para um orçamento. */
   @Post('quotes/:quoteId/follow-ups')
+  @RequirePermissions('quotes.update')
   create(
     @Req() r: any,
     @Param('quoteId') quoteId: string,
@@ -56,6 +60,7 @@ export class QuoteFollowUpsController {
 
   /** Atualiza campos editáveis de um follow-up. */
   @Patch('quote-follow-ups/:id')
+  @RequirePermissions('quotes.update')
   update(
     @Req() r: any,
     @Param('id') id: string,
@@ -66,6 +71,7 @@ export class QuoteFollowUpsController {
 
   /** Transiciona o status de um follow-up (PENDING → DONE | CANCELLED). */
   @Patch('quote-follow-ups/:id/status')
+  @RequirePermissions('quotes.update')
   updateStatus(
     @Req() r: any,
     @Param('id') id: string,
@@ -80,6 +86,7 @@ export class QuoteFollowUpsController {
 
   /** Agenda do dia: follow-ups PENDING agendados até o fim de hoje. */
   @Get('follow-ups/today')
+  @RequirePermissions('quotes.read')
   listToday(@Req() r: any) {
     return this.quoteFollowUpsService.listToday(r.company.id);
   }
