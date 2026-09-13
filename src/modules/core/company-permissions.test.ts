@@ -531,4 +531,87 @@ describe('company-permissions (matriz centralizada)', () => {
       expect(roleHasPermission(OWNER, 'quotes.view_cost')).toBe(true);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 10. Role matrix — invariants (V5 — recomendação 4)
+  // ---------------------------------------------------------------------------
+  describe('Role matrix — invariants', () => {
+    const OPERATIONAL_ROLES: CompanyUserRole[] = [
+      'SALES',
+      'FINANCE',
+      'INSTALLER',
+      'PRODUCTION',
+    ];
+
+    // (a) Hierarquia: COMPANY_OWNER ⊇ MANAGER ⊇ cada role operacional
+    it('hierarquia: COMPANY_OWNER tem TODAS as permissões de MANAGER', () => {
+      const ownerPerms = new Set(permissionsForRole(OWNER));
+      permissionsForRole('MANAGER').forEach((permission) => {
+        expect(ownerPerms.has(permission)).toBe(true);
+      });
+    });
+
+    it.each(OPERATIONAL_ROLES)(
+      'hierarquia: MANAGER tem TODAS as permissões de %s',
+      (role) => {
+        const managerPerms = new Set(permissionsForRole('MANAGER'));
+        permissionsForRole(role).forEach((permission) => {
+          expect(managerPerms.has(permission)).toBe(true);
+        });
+      },
+    );
+
+    // (b) SALES — vende orçamentos, não mexe em finanças nem em membros
+    it('SALES tem quotes.create e quotes.read', () => {
+      expect(roleHasPermission('SALES', 'quotes.create')).toBe(true);
+      expect(roleHasPermission('SALES', 'quotes.read')).toBe(true);
+    });
+
+    it('SALES NÃO tem expenses.create nem members.invite', () => {
+      expect(roleHasPermission('SALES', 'expenses.create')).toBe(false);
+      expect(roleHasPermission('SALES', 'members.invite')).toBe(false);
+    });
+
+    // (c) FINANCE — finanças completas, mas não cria orçamento
+    it('FINANCE tem expenses.read, expenses.create e customer_payments.read', () => {
+      expect(roleHasPermission('FINANCE', 'expenses.read')).toBe(true);
+      expect(roleHasPermission('FINANCE', 'expenses.create')).toBe(true);
+      expect(roleHasPermission('FINANCE', 'customer_payments.read')).toBe(true);
+    });
+
+    it('FINANCE NÃO tem quotes.create', () => {
+      expect(roleHasPermission('FINANCE', 'quotes.create')).toBe(false);
+    });
+
+    // (d) INSTALLER / PRODUCTION — chão de fábrica, não aprovam orçamento
+    it.each(['INSTALLER', 'PRODUCTION'] as CompanyUserRole[])(
+      '%s tem production.read mas NÃO tem quotes.approve',
+      (role) => {
+        expect(roleHasPermission(role, 'production.read')).toBe(true);
+        expect(roleHasPermission(role, 'quotes.approve')).toBe(false);
+      },
+    );
+
+    // (e) Nenhum role tem permissão vazia (lista vazia ou código vazio)
+    it('nenhum role tem lista de permissões vazia ou código vazio', () => {
+      const enumValues = Object.values(CompanyUserRole) as CompanyUserRole[];
+      enumValues.forEach((role) => {
+        const perms = permissionsForRole(role);
+        expect(perms.length).toBeGreaterThan(0);
+        perms.forEach((permission) => {
+          expect(permission.trim().length).toBeGreaterThan(0);
+        });
+      });
+    });
+
+    // (f) Nenhum código de permissão duplicado dentro do mesmo role
+    it('nenhum role tem código de permissão duplicado', () => {
+      const enumValues = Object.values(CompanyUserRole) as CompanyUserRole[];
+      enumValues.forEach((role) => {
+        const perms = permissionsForRole(role);
+        const unique = new Set(perms);
+        expect(unique.size).toBe(perms.length);
+      });
+    });
+  });
 });
