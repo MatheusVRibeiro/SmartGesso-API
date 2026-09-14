@@ -50,8 +50,8 @@ jobs:
       - name: Prisma validate
         run: npx prisma validate
 
-      - name: Prisma migrate
-        run: npx prisma migrate deploy
+      - name: Prisma schema sync
+        run: npx prisma db push --skip-generate
 
       - name: Tests
         run: npm test
