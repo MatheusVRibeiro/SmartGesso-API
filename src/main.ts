@@ -5,7 +5,6 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { UPLOADS_DIR, UPLOADS_PREFIX } from './modules/uploads/uploads.service';
 
 export async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -38,27 +37,35 @@ export async function bootstrap() {
   }
   // `*` no .env = refletir qualquer origem (dev). Com allowlist real, valida a origem.
   const allowAllOrigins = corsOrigins.includes('*');
+  // Fail-closed: `*` NUNCA é aceitável em produção (permitiria qualquer site originar
+  // requests credenciais). Falha no startup em vez de degradar silenciosamente.
+  if (!isDev && allowAllOrigins) {
+    throw new Error(
+      '[SECURITY] CORS: origem "*" não é permitida em produção. Defina CORS_MOBILE_ORIGINS/CORS_ADMIN_WEB_ORIGINS com allowlist explícita.',
+    );
+  }
   app.enableCors({
     origin: allowAllOrigins ? true : corsOrigins.length > 0 ? corsOrigins : false,
     credentials: true,
   });
 
-  // Serve arquivos enviados (fotos) estaticamente em /uploads.
-  app.useStaticAssets(UPLOADS_DIR, {
-    prefix: UPLOADS_PREFIX,
-    setHeaders: (res) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
-    },
-  });
+  // [P1.12 — V5 ETAPA 10] A leitura estática de /uploads foi REMOVIDA (antes:
+  // useStaticAssets servia fotos de obra/comprovantes para qualquer pessoa com
+  // a URL). Os arquivos agora são servidos APENAS pela rota autenticada
+  // GET /api/v1/uploads/:subdir/:filename (UploadsController): exige JWT,
+  // resolve o registro Attachment pela storageKey e valida o companyId.
+  // Legados (sem registro, pré-migração) são negados com 404 (fail-closed).
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );
   const prefix = process.env.API_PREFIX ?? 'api/v1';
   app.setGlobalPrefix(prefix);
 
-  // Swagger apenas fora de produção (não expor superfície da API).
-  if (isDev) {
+  // Swagger via env SWAGGER_ENABLED (default: true em dev, false em prod)
+  const swaggerEnabled = process.env.SWAGGER_ENABLED !== undefined
+    ? process.env.SWAGGER_ENABLED === 'true'
+    : isDev;
+  if (swaggerEnabled) {
     const config = new DocumentBuilder()
       .setTitle('SmartGesso API')
       .setDescription('API SaaS multiempresa para SmartGesso Mobile e Admin Web')
@@ -69,9 +76,14 @@ export async function bootstrap() {
   }
 
   const port = Number(process.env.PORT ?? 3000);
+  // Trust proxy: quando a API roda atrás de proxy/CDN (ex.: Hostinger), o req.ip
+  // seria o IP do proxy para todos — quebrando rate limiting por IP e audit logs.
+  if (process.env.TRUST_PROXY === 'true') {
+    app.set('trust proxy', 1); // 1 hop (proxy imediato)
+  }
   await app.listen(port);
   logger.log(`🚀 API rodando em: http://localhost:${port}/${prefix}`);
-  if (isDev) {
+  if (swaggerEnabled) {
     logger.log(`📚 Swagger Docs em: http://localhost:${port}/docs`);
   }
 }

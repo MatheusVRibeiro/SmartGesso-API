@@ -535,14 +535,18 @@ export class AuthService {
 
     const tokens = this.userTokens(userId, companyId);
 
-    // Atualizar a última sessão ativa do usuário com o novo activeCompanyId
-    await this.prisma.userSession.updateMany({
-      where: {
-        userId,
-        revokedAt: null,
-      },
-      data: { activeCompanyId: companyId },
+    // Atualizar apenas a sessão mais recente do usuário com o novo activeCompanyId
+    // (evita propagar a troca de empresa para TODOS os dispositivos logados).
+    const latestSession = await this.prisma.userSession.findFirst({
+      where: { userId, revokedAt: null },
+      orderBy: { createdAt: 'desc' },
     });
+    if (latestSession) {
+      await this.prisma.userSession.update({
+        where: { id: latestSession.id },
+        data: { activeCompanyId: companyId },
+      });
+    }
 
     return { activeCompanyId: companyId, ...tokens };
   }

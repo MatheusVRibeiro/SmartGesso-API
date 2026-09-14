@@ -1,7 +1,6 @@
 import { IsArray, IsDateString, IsEnum, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ProductionOrderStatus } from '@prisma/client';
-import { CreateProductionOrderItemDto } from './create-production-order.dto';
 
 /** DTO para atualização de item de ordem de produção. */
 export class UpdateProductionOrderItemDto {

@@ -1,12 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, MeasurementApplicationType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
+  CalculateFromQuoteDto,
   CalculateMaterialsDto,
   CreateCompositionDto,
   FormulaBasedOn,
   UpdateCompositionDto,
 } from './dto';
+import { DEFAULT_CATALOG_MATERIALS } from '../catalog/catalog.service';
 
 /** Fórmula armazenada no campo Json de CompositionItem. */
 interface CompositionFormula {
@@ -145,15 +147,89 @@ export class CompositionsService {
 
   async calculate(companyId: string, dto: CalculateMaterialsDto) {
     await this.ensureDefaultDrywall(companyId);
+    return this._calculateMaterials(companyId, dto.applicationType, dto.measurements);
+  }
 
+  /**
+   * Calcula materiais a partir das medições armazenadas nos ambientes
+   * (QuoteEnvironment) de um orçamento — sem depender de Work.
+   *
+   * Busca todas as medições ativas de todos os ambientes do orçamento
+   * informado e reutiliza a mesma lógica de cálculo da composição.
+   */
+  async calculateFromQuote(companyId: string, dto: CalculateFromQuoteDto) {
+    await this.ensureDefaultDrywall(companyId);
+
+    // Valida que o orçamento pertence à empresa ativa
+    const quote = await this.prisma.quote.findFirst({
+      where: { id: dto.quoteId, companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!quote) {
+      throw new BadRequestException(
+        'Orçamento inválido: não pertence à empresa ativa',
+      );
+    }
+
+    // Busca medições de todos os ambientes do orçamento
+    const environments = await this.prisma.quoteEnvironment.findMany({
+      where: { companyId, quoteId: dto.quoteId, deletedAt: null },
+      include: {
+        measurements: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: { order: 'asc' },
+    });
+
+    const measurements = environments.flatMap((env) =>
+      env.measurements.map((m) => ({
+        length: Number(m.length),
+        width: Number(m.width),
+        area: Number(m.area),
+        perimeter: Number(m.perimeter),
+      })),
+    );
+
+    return this._calculateMaterials(
+      companyId,
+      dto.applicationType,
+      measurements,
+    );
+  }
+
+  /**
+   * Lógica central de cálculo de materiais a partir de medições.
+   * Compartilhada por `calculate` (medições do cliente) e
+   * `calculateFromQuote` (medições dos ambientes do banco).
+   */
+  private async _calculateMaterials(
+    companyId: string,
+    applicationType: MeasurementApplicationType,
+    measurements: Array<{
+      length?: number | null;
+      width?: number | null;
+      area?: number | null;
+      perimeter?: number | null;
+    }>,
+  ) {
     // Totais a partir das medições (área derivada de length × width quando ausente)
     let areaTotal = 0;
     let perimeterTotal = 0;
     let lengthTotal = 0;
-    for (const m of dto.measurements) {
+    for (const m of measurements) {
       const area = m.area ?? (m.length != null && m.width != null ? m.length * m.width : 0);
+      let perimeter = m.perimeter ?? 0;
+      if (perimeter <= 0) {
+        if (m.length != null && m.width != null && m.length > 0 && m.width > 0) {
+          perimeter = round2(2 * (m.length + m.width));
+        } else if (area > 0) {
+          perimeter = round2(4 * Math.sqrt(area));
+        }
+      }
       areaTotal += area;
-      perimeterTotal += m.perimeter ?? 0;
+      perimeterTotal += perimeter;
       lengthTotal += m.length ?? 0;
     }
     areaTotal = round2(areaTotal);
@@ -166,17 +242,29 @@ export class CompositionsService {
       );
     }
 
-    // Composição ativa de maior versão para o tipo de aplicação
-    const composition = await this.prisma.composition.findFirst({
+    // Composição ativa de maior versão para o tipo de aplicação (com fallback para DRYWALL padrão)
+    let composition = await this.prisma.composition.findFirst({
       where: {
         companyId,
-        applicationType: dto.applicationType,
+        applicationType,
         status: 'ACTIVE',
         deletedAt: null,
       },
       orderBy: { version: 'desc' },
       include: COMPOSITION_INCLUDE,
     });
+    if (!composition && applicationType !== 'DRYWALL') {
+      composition = await this.prisma.composition.findFirst({
+        where: {
+          companyId,
+          applicationType: 'DRYWALL',
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+        orderBy: { version: 'desc' },
+        include: COMPOSITION_INCLUDE,
+      });
+    }
     if (!composition) {
       throw new NotFoundException(
         'Nenhuma composição ativa encontrada para o tipo de aplicação informado',
@@ -246,39 +334,64 @@ export class CompositionsService {
 
   /** Preço unitário do Material do catálogo da empresa cujo nome contém o nome do item (LIKE). */
   private async findMaterialUnitPrice(companyId: string, name: string): Promise<number | null> {
-    const material = await this.prisma.material.findFirst({
+    let material = await this.prisma.material.findFirst({
       where: { companyId, deletedAt: null, name: { contains: name } },
       orderBy: { name: 'asc' },
       select: { price: true },
     });
+    if (!material && name.includes(' ')) {
+      const keyword = name.split(' ')[0];
+      material = await this.prisma.material.findFirst({
+        where: { companyId, deletedAt: null, name: { contains: keyword } },
+        orderBy: { name: 'asc' },
+        select: { price: true },
+      });
+    }
     return material?.price != null ? Number(material.price) : null;
   }
 
-  /** Seed idempotente: cria a composição padrão DRYWALL (versão 1) se a empresa ainda não tiver. */
+  /** Seed idempotente: cria a composição padrão DRYWALL (versão 1) e materiais básicos se a empresa ainda não tiver. */
   private async ensureDefaultDrywall(companyId: string) {
     const existing = await this.prisma.composition.findFirst({
       where: { companyId, code: 'DRYWALL', deletedAt: null },
       select: { id: true },
     });
-    if (existing) return;
-
-    await this.prisma.composition.create({
-      data: {
-        companyId,
-        code: 'DRYWALL',
-        name: 'Drywall Padrão',
-        version: 1,
-        applicationType: 'DRYWALL',
-        status: 'ACTIVE',
-        items: {
-          create: DRYWALL_ITEMS.map((i) => ({
-            materialType: i.materialType,
-            name: i.name,
-            unit: i.unit,
-            formula: i.formula as unknown as Prisma.InputJsonValue,
-          })),
+    if (!existing) {
+      await this.prisma.composition.create({
+        data: {
+          companyId,
+          code: 'DRYWALL',
+          name: 'Drywall Padrão',
+          version: 1,
+          applicationType: 'DRYWALL',
+          status: 'ACTIVE',
+          items: {
+            create: DRYWALL_ITEMS.map((i) => ({
+              materialType: i.materialType,
+              name: i.name,
+              unit: i.unit,
+              formula: i.formula as unknown as Prisma.InputJsonValue,
+            })),
+          },
         },
-      },
-    });
+      });
+    }
+
+    // Garante que os materiais básicos também existam no catálogo da empresa
+    const materialsCount = await this.prisma.material.count({ where: { companyId } });
+    if (materialsCount === 0) {
+      await this.prisma.material.createMany({
+        data: DEFAULT_CATALOG_MATERIALS.map((m) => ({
+          companyId,
+          name: m.name,
+          description: m.description,
+          unit: m.unit,
+          price: m.price,
+          cost: m.cost,
+          stockQty: m.stockQty,
+          minStockQty: m.minStockQty,
+        })),
+      });
+    }
   }
 }

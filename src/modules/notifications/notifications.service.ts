@@ -52,6 +52,14 @@ export class NotificationsService {
     return { ok: updated.count > 0 };
   }
 
+  /** Conta notificações não lidas da empresa (para badge). */
+  async unreadCount(companyId: string) {
+    const count = await this.prisma.notification.count({
+      where: { companyId, read: false },
+    });
+    return { count };
+  }
+
   /** Cria uma notificação no banco (usada por outros módulos/cron). */
   async create(
     companyId: string,

@@ -1,15 +1,58 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { PrismaService } from '../../database/prisma.service';
+import { PerformanceService } from './performance.service';
+import { DashboardOverviewService } from './dashboard-overview.service';
 
 @ApiTags('company-dashboard')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
 @Controller('company/dashboard')
 export class CompanyDashboardController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly performanceService: PerformanceService,
+    private readonly overviewService: DashboardOverviewService,
+  ) {}
+
+  @Get('overview')
+  @ApiOperation({
+    summary:
+      'Visão geral consolidada da Dashboard (financeiro, metas, agenda, alertas e gráficos)',
+  })
+  async overview(@Req() r: any) {
+    return this.overviewService.getOverview(r.company.id);
+  }
+
+  @Get('performance')
+  @ApiOperation({
+    summary:
+      'Performance mensal por vendedor: totais, % vs meta e divisão por membro',
+  })
+  async performance(
+    @Req() r: any,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    const y = Number(year);
+    const m = Number(month);
+    if (!Number.isInteger(y) || !Number.isInteger(m) || m < 1 || m > 12) {
+      throw new BadRequestException(
+        'year e month são obrigatórios (month entre 1 e 12)',
+      );
+    }
+    return this.performanceService.getPerformance(r.company.id, y, m);
+  }
 
   @Get('metrics')
   @ApiOperation({ summary: 'Métricas do dashboard da empresa' })

@@ -12,11 +12,12 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('notifications')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
@@ -32,6 +33,12 @@ export class NotificationsController {
       r.user.id,
       body,
     );
+  }
+
+  /** GET /notifications/unread-count — quantidade de não lidas (badge). */
+  @Get('unread-count')
+  unreadCount(@Req() r: any) {
+    return this.notificationsService.unreadCount(r.company.id);
   }
 
   /** GET /notifications — lista as notificações da empresa ativa. */

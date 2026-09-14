@@ -25,4 +25,10 @@ export class CreateExpenseDto {
   @IsOptional()
   @IsString()
   observations?: string;
+
+  /** Ordem de serviço vinculada (opcional). Quando informado, a despesa
+   *  é contabilizada como custo direto da OS no financial-summary. */
+  @IsOptional()
+  @IsString()
+  serviceOrderId?: string;
 }

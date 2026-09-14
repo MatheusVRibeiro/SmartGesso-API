@@ -59,11 +59,18 @@ export class AuthController {
   @ApiBearerAuth()
   @Get('me')
   me(@Req() r: any) {
+    // V5 seção 11: /auth/me expõe role + permissions do membro ativo.
+    // req.member só é populado pelo ActiveCompanyGuard (rotas com contexto de
+    // empresa) — quando ausente, mantém compatibilidade com role null e
+    // permissions [] (NUNCA inventar COMPANY_OWNER).
+    const member = r.member;
     return {
       id: r.user.id,
       name: r.user.name,
       email: r.user.email,
       activeCompanyId: r.companyId ?? null,
+      role: member?.role ?? null,
+      permissions: member?.permissions ?? [],
     };
   }
 

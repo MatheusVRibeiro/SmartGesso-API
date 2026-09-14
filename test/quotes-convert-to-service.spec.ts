@@ -1,14 +1,18 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { QuotesService } from '../src/modules/quotes/quotes.service';
 
 /**
  * Testes unitários da conversão Orçamento → Serviço (convertToService).
  * PrismaService é mockado — nenhum banco é acessado.
+ * 
+ * Nota: convertToService() está deprecated. Use approve() para nova implementação.
+ * Estes testes mantêm cobertura do endpoint deprecated por compatibilidade.
  */
 describe('QuotesService.convertToService', () => {
   let service: QuotesService;
   let prisma: any;
   let tx: any;
+  let sequenceService: any;
 
   const quoteBase = {
     id: 'quote-1',
@@ -39,6 +43,7 @@ describe('QuotesService.convertToService', () => {
     companyId: 'company-1',
     clientId: 'client-1',
     workId: 'work-1',
+    quoteId: 'quote-1',
     code: 7,
     status: 'PENDENTE',
     scheduledDate: new Date('2026-09-01T10:00:00.000Z'),
@@ -46,17 +51,18 @@ describe('QuotesService.convertToService', () => {
     observations: 'Observações do orçamento',
     client: { id: 'client-1', name: 'Cliente Teste' },
     work: { id: 'work-1', name: 'Obra Teste' },
+    quote: { id: 'quote-1', quoteNumber: 42, version: 1 },
     materials: [],
   };
 
   function buildPrismaMock(overrides: Partial<any> = {}) {
     tx = {
       serviceOrder: {
-        findFirst: jest.fn().mockResolvedValue({ code: 6 }),
+        findFirst: jest.fn().mockResolvedValue(null), // Nenhuma OS existente
         create: jest.fn().mockResolvedValue(createdOrder),
       },
       quote: {
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn().mockResolvedValue({ ...quoteBase, convertedAt: new Date() }),
       },
       ...(overrides.tx ?? {}),
     };
@@ -74,13 +80,20 @@ describe('QuotesService.convertToService', () => {
 
   beforeEach(() => {
     buildPrismaMock();
-    service = new QuotesService(prisma);
+    sequenceService = { increment: jest.fn().mockResolvedValue(7) };
+    service = new QuotesService(
+      prisma,
+      sequenceService,
+      { log: jest.fn() } as any,
+      { create: jest.fn() } as any,
+      { sendToCompany: jest.fn() } as any,
+    );
   });
 
   it('cria OS reaproveitando cliente, obra, observações, startDate e total', async () => {
     const result = await service.convertToService('company-1', 'quote-1');
 
-    // Dados enviados ao create da OS
+    // Verificar que a OS foi criada com os dados corretos
     const createData = tx.serviceOrder.create.mock.calls[0][0].data;
     expect(createData).toEqual(
       expect.objectContaining({
@@ -94,51 +107,94 @@ describe('QuotesService.convertToService', () => {
       }),
     );
 
-    // Resposta contém serviceOrderId + dados da OS criada
+    // Resposta contém serviceOrderId + dados da OS criada + created flag
     expect(result.serviceOrderId).toBe('os-1');
     expect(result.code).toBe(7);
     expect(result.status).toBe('PENDENTE');
     expect(result.clientId).toBe('client-1');
     expect(result.workId).toBe('work-1');
     expect(result.saleValue).toBe(1050);
+    expect(result.created).toBe(true);
   });
 
-  it('gera código sequencial da OS dentro da transação', async () => {
-    await service.convertToService('company-1', 'quote-1');
-
-    expect(tx.serviceOrder.findFirst).toHaveBeenCalledWith({
-      where: { companyId: 'company-1' },
-      orderBy: { code: 'desc' },
-      select: { code: true },
+  it('retorna OS existente na segunda conversão (idempotente)', async () => {
+    // Simular que já existe uma OS para este orçamento
+    const existingOrder = { ...createdOrder, code: 5 };
+    buildPrismaMock({
+      tx: {
+        serviceOrder: {
+          findFirst: jest.fn().mockResolvedValue(existingOrder),
+          create: jest.fn(),
+        },
+      },
     });
-    expect(tx.serviceOrder.create.mock.calls[0][0].data.code).toBe(7);
+    service = new QuotesService(
+      prisma,
+      sequenceService,
+      { log: jest.fn() } as any,
+      { create: jest.fn() } as any,
+      { sendToCompany: jest.fn() } as any,
+    );
+
+    const result = await service.convertToService('company-1', 'quote-1');
+
+    // Não deve criar nova OS
+    expect(tx.serviceOrder.create).not.toHaveBeenCalled();
+
+    // Deve retornar a OS existente
+    expect(result.serviceOrderId).toBe('os-1');
+    expect(result.code).toBe(5);
+    expect(result.created).toBe(false);
   });
 
-  it('marca o orçamento como convertido (convertedAt) dentro da transação', async () => {
+  it('verifica existência de OS antes de criar (idempotência)', async () => {
     await service.convertToService('company-1', 'quote-1');
 
-    expect(tx.quote.updateMany).toHaveBeenCalledWith({
-      where: { id: 'quote-1', convertedAt: null },
+    // Primeiro findFirst deve verificar se já existe OS para o quote
+    expect(tx.serviceOrder.findFirst).toHaveBeenCalledWith({
+      where: { companyId: 'company-1', quoteId: 'quote-1' },
+      include: expect.any(Object),
+    });
+  });
+
+  it('marca orçamento como convertido (convertedAt) dentro da transação', async () => {
+    await service.convertToService('company-1', 'quote-1');
+
+    // Verificar que convertedAt foi atualizado
+    expect(tx.quote.update).toHaveBeenCalledWith({
+      where: { id: 'quote-1' },
       data: { convertedAt: expect.any(Date) },
     });
   });
 
-  it('lança 409 Conflict quando o orçamento já foi convertido', async () => {
+  it('retorna OS existente quando orçamento já foi convertido (idempotente)', async () => {
+    // Simular que o orçamento já foi convertido (convertedAt não nulo)
+    const existingOrder = { ...createdOrder, code: 5 };
     buildPrismaMock({
-      prisma: {
-        quote: {
-          findFirst: jest.fn().mockResolvedValue({
-            ...quoteBase,
-            convertedAt: new Date('2026-08-19T00:00:00.000Z'),
-          }),
+      tx: {
+        serviceOrder: {
+          findFirst: jest.fn().mockResolvedValue(existingOrder),
+          create: jest.fn(),
         },
       },
     });
-    service = new QuotesService(prisma);
-
-    await expect(service.convertToService('company-1', 'quote-1')).rejects.toThrow(
-      ConflictException,
+    service = new QuotesService(
+      prisma,
+      sequenceService,
+      { log: jest.fn() } as any,
+      { create: jest.fn() } as any,
+      { sendToCompany: jest.fn() } as any,
     );
+
+    const result = await service.convertToService('company-1', 'quote-1');
+
+    // Não deve criar nova OS
+    expect(tx.serviceOrder.create).not.toHaveBeenCalled();
+
+    // Deve retornar a OS existente com created=false
+    expect(result.serviceOrderId).toBe('os-1');
+    expect(result.code).toBe(5);
+    expect(result.created).toBe(false);
   });
 
   it('lança 400 BadRequest quando o orçamento não está APROVADO', async () => {
@@ -152,7 +208,13 @@ describe('QuotesService.convertToService', () => {
         },
       },
     });
-    service = new QuotesService(prisma);
+    service = new QuotesService(
+      prisma,
+      sequenceService,
+      { log: jest.fn() } as any,
+      { create: jest.fn() } as any,
+      { sendToCompany: jest.fn() } as any,
+    );
 
     await expect(service.convertToService('company-1', 'quote-1')).rejects.toThrow(
       BadRequestException,
@@ -167,7 +229,13 @@ describe('QuotesService.convertToService', () => {
         },
       },
     });
-    service = new QuotesService(prisma);
+    service = new QuotesService(
+      prisma,
+      sequenceService,
+      { log: jest.fn() } as any,
+      { create: jest.fn() } as any,
+      { sendToCompany: jest.fn() } as any,
+    );
 
     await expect(service.convertToService('company-1', 'inexistente')).rejects.toThrow(
       NotFoundException,

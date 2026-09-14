@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { AdjustMaterialStockDto } from './dto/adjust-material-stock.dto';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
+import { DEFAULT_CATALOG_MATERIALS } from '../catalog/catalog.service';
 
 /**
  * Estoque: movimentos de inventário (entrada, saída, reserva, consumo,
@@ -213,6 +214,22 @@ export class InventoryService {
 
   /** Lista materiais com saldo, estoque mínimo e custo. */
   async listMaterials(companyId: string, search?: string) {
+    const count = await this.prisma.material.count({ where: { companyId } });
+    if (count === 0) {
+      await this.prisma.material.createMany({
+        data: DEFAULT_CATALOG_MATERIALS.map((m) => ({
+          companyId,
+          name: m.name,
+          description: m.description,
+          unit: m.unit,
+          price: m.price,
+          cost: m.cost,
+          stockQty: m.stockQty,
+          minStockQty: m.minStockQty,
+        })),
+      });
+    }
+
     const term = search?.trim();
     const items = await this.prisma.material.findMany({
       where: {

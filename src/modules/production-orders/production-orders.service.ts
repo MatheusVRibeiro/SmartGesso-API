@@ -108,13 +108,40 @@ export class ProductionOrdersService {
         : existing.completedDate;
 
     // Atualizar itens se fornecidos
-    if (dto.items) {
-      // Deletar itens existentes e criar novos
-      await this.prisma.productionOrderItem.deleteMany({
-        where: { productionOrderId: id },
-      });
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.items) {
+        // Deletar itens existentes e criar novos (dentro da transação)
+        await tx.productionOrderItem.deleteMany({
+          where: { productionOrderId: id },
+        });
 
-      return this.prisma.productionOrder.update({
+        return tx.productionOrder.update({
+          where: { id },
+          data: {
+            clientId: dto.clientId,
+            workId: dto.workId,
+            status: dto.status,
+            dueDate: dto.dueDate ? new Date(dto.dueDate) : existing.dueDate,
+            completedDate,
+            responsiblePerson: dto.responsiblePerson ?? existing.responsiblePerson,
+            observations: dto.observations ?? existing.observations,
+            items: {
+              create: dto.items.map(item => ({
+                productName: item.productName || '',
+                quantity: item.quantity || 0,
+                unit: item.unit || 'un',
+                producedQty: item.producedQty || 0,
+                wastedQty: item.wastedQty || 0,
+                status: item.status || 'PENDENTE',
+              })),
+            },
+          },
+          include: PRODUCTION_ORDER_INCLUDE,
+        });
+      }
+
+      // Atualizar sem modificar itens
+      return tx.productionOrder.update({
         where: { id },
         data: {
           clientId: dto.clientId,
@@ -124,34 +151,9 @@ export class ProductionOrdersService {
           completedDate,
           responsiblePerson: dto.responsiblePerson ?? existing.responsiblePerson,
           observations: dto.observations ?? existing.observations,
-          items: {
-            create: dto.items.map(item => ({
-              productName: item.productName || '',
-              quantity: item.quantity || 0,
-              unit: item.unit || 'un',
-              producedQty: item.producedQty || 0,
-              wastedQty: item.wastedQty || 0,
-              status: item.status || 'PENDENTE',
-            })),
-          },
         },
         include: PRODUCTION_ORDER_INCLUDE,
       });
-    }
-
-    // Atualizar sem modificar itens
-    return this.prisma.productionOrder.update({
-      where: { id },
-      data: {
-        clientId: dto.clientId,
-        workId: dto.workId,
-        status: dto.status,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : existing.dueDate,
-        completedDate,
-        responsiblePerson: dto.responsiblePerson ?? existing.responsiblePerson,
-        observations: dto.observations ?? existing.observations,
-      },
-      include: PRODUCTION_ORDER_INCLUDE,
     });
   }
 

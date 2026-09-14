@@ -10,40 +10,59 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../core/guards/jwt-auth.guard';
 import { ActiveCompanyGuard } from '../core/guards/active-company.guard';
+import { CompanyAccessGuard } from '../core/guards/company-access.guard';
+import { PermissionsGuard } from '../core/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { ClientsService } from './clients.service';
 import { CreateClientDto, UpdateClientDto } from './dto';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
 @ApiTags('clients')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, ActiveCompanyGuard)
+@UseGuards(JwtAuthGuard, ActiveCompanyGuard, CompanyAccessGuard)
 @Controller('clients')
 export class ClientsController {
   constructor(private readonly clients: ClientsService) {}
 
   @Get()
-  list(@Req() r: any, @Query('search') search?: string) {
-    return this.clients.findAll(r.company.id, search);
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('clients.read')
+  @ApiOperation({ summary: 'Lista clientes da empresa (paginado)' })
+  list(@Req() r: any, @Query() pagination: PaginationDto, @Query('search') search?: string) {
+    return this.clients.findAll(r.company.id, pagination, search);
   }
 
   @Get(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('clients.read')
+  @ApiOperation({ summary: 'Busca cliente por ID' })
   get(@Req() r: any, @Param('id') id: string) {
     return this.clients.findOne(r.company.id, id);
   }
 
   @Post()
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('clients.create')
+  @ApiOperation({ summary: 'Cria novo cliente' })
   create(@Req() r: any, @Body() dto: CreateClientDto) {
     return this.clients.create(r.company.id, dto);
   }
 
   @Patch(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('clients.update')
+  @ApiOperation({ summary: 'Atualiza cliente' })
   update(@Req() r: any, @Param('id') id: string, @Body() dto: UpdateClientDto) {
     return this.clients.update(r.company.id, id, dto);
   }
 
   @Delete(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('clients.archive')
+  @ApiOperation({ summary: 'Remove cliente' })
   remove(@Req() r: any, @Param('id') id: string) {
     return this.clients.remove(r.company.id, id);
   }

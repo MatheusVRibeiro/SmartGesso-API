@@ -18,7 +18,7 @@ export class CompanyAccessGuard implements CanActivate {
     if (!company) {
       throw new HttpException(
         {
-          code: 'COMPANY_ACCESS_SUSPENDED',
+          code: 'COMPANY_ACCESS_DENIED',
           message: 'Nenhuma empresa ativa selecionada.',
           details: {
             companyName: null,
@@ -26,7 +26,7 @@ export class CompanyAccessGuard implements CanActivate {
             supportPhone: process.env.APP_SUPPORT_PHONE ?? null,
           },
         },
-        HttpStatus.PAYMENT_REQUIRED,
+        HttpStatus.FORBIDDEN,
       );
     }
 

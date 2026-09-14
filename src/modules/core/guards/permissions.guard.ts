@@ -27,7 +27,12 @@ export class PermissionsGuard implements CanActivate {
       memberPermissions.includes(permission),
     );
 
-    if (!hasAll) throw new ForbiddenException('Permissão insuficiente');
+    if (!hasAll)
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'FORBIDDEN',
+        message: 'Permissão insuficiente',
+      });
 
     return true;
   }
