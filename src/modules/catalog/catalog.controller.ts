@@ -31,6 +31,13 @@ import { UpdateServiceDto } from './dto/update-service.dto';
 export class CatalogController {
   constructor(private readonly catalog: CatalogService) {}
 
+  @Post('seed-defaults')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('catalog.create')
+  seedDefaults(@Req() r: any) {
+    return this.catalog.seedDefaults(r.company.id);
+  }
+
   // ------------------------------------------------------------------
   // Products
   // ------------------------------------------------------------------

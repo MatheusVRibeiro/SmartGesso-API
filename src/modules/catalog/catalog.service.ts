@@ -9,6 +9,143 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 
 /**
+ * Materiais pré-cadastrados padrão para novas empresas (gesso e drywall).
+ */
+export const DEFAULT_CATALOG_MATERIALS = [
+  {
+    name: 'Placa de Gesso ST 12.5mm',
+    description: 'Placa de drywall standard para forros e paredes internas',
+    unit: 'un',
+    price: 38.5,
+    cost: 28.0,
+    stockQty: 0,
+    minStockQty: 10,
+  },
+  {
+    name: 'Placa de Gesso RU 12.5mm (Verde)',
+    description: 'Placa de drywall resistente à umidade para banheiros e cozinhas',
+    unit: 'un',
+    price: 49.9,
+    cost: 36.5,
+    stockQty: 0,
+    minStockQty: 5,
+  },
+  {
+    name: 'Perfil F530 (Canaleta)',
+    description: 'Perfil canaleta F530 galvanizado para estrutura de forro drywall',
+    unit: 'm',
+    price: 8.5,
+    cost: 5.8,
+    stockQty: 0,
+    minStockQty: 20,
+  },
+  {
+    name: 'Guia 48mm',
+    description: 'Guia U metálica galvanizada de 48mm para paredes drywall',
+    unit: 'm',
+    price: 6.2,
+    cost: 4.1,
+    stockQty: 0,
+    minStockQty: 20,
+  },
+  {
+    name: 'Montante 48mm',
+    description: 'Montante C metálico galvanizado de 48mm para paredes drywall',
+    unit: 'm',
+    price: 7.9,
+    cost: 5.2,
+    stockQty: 0,
+    minStockQty: 20,
+  },
+  {
+    name: 'Parafuso GN 25 (Ponta Agulha)',
+    description: 'Parafuso fosfatizado 3.5x25mm para fixação de placas drywall',
+    unit: 'un',
+    price: 0.15,
+    cost: 0.08,
+    stockQty: 0,
+    minStockQty: 500,
+  },
+  {
+    name: 'Fita Microperfurada de Papel',
+    description: 'Fita de papel microperfurada para tratamento de juntas de drywall',
+    unit: 'm',
+    price: 0.8,
+    cost: 0.4,
+    stockQty: 0,
+    minStockQty: 50,
+  },
+  {
+    name: 'Massa para Junta Drywall',
+    description: 'Massa pronta para acabamento e tratamento de juntas de drywall',
+    unit: 'kg',
+    price: 5.5,
+    cost: 3.2,
+    stockQty: 0,
+    minStockQty: 25,
+  },
+  {
+    name: 'Gesso em Pó (Lento/Rápido)',
+    description: 'Gesso em pó para fundição, revestimentos e chumbamento',
+    unit: 'kg',
+    price: 1.8,
+    cost: 0.9,
+    stockQty: 0,
+    minStockQty: 40,
+  },
+  {
+    name: 'Regulador / Pendural F530',
+    description: 'Peça de fixação e regulagem de altura para perfil F530',
+    unit: 'un',
+    price: 2.2,
+    cost: 1.3,
+    stockQty: 0,
+    minStockQty: 50,
+  },
+] as const;
+
+/**
+ * Serviços pré-cadastrados padrão para novas empresas (mão de obra gesso e drywall).
+ */
+export const DEFAULT_CATALOG_SERVICES = [
+  {
+    name: 'Instalação de Forro Drywall',
+    description: 'Mão de obra completa para instalação e acabamento de forro drywall',
+    unit: 'm²',
+    price: 45.0,
+    cost: 25.0,
+  },
+  {
+    name: 'Instalação de Parede Drywall',
+    description: 'Mão de obra completa para montagem de divisória drywall simples',
+    unit: 'm²',
+    price: 55.0,
+    cost: 30.0,
+  },
+  {
+    name: 'Confecção de Sanca Aberta/Fechada',
+    description: 'Mão de obra especializada para confecção de sanca decorativa',
+    unit: 'm',
+    price: 50.0,
+    cost: 25.0,
+  },
+  {
+    name: 'Forro Gesso Plaquinha 60x60',
+    description: 'Instalação de forro de plaquinha com arame e chumbamento com gesso',
+    unit: 'm²',
+    price: 38.0,
+    cost: 20.0,
+  },
+  {
+    name: 'Pintura e Emassamento sobre Drywall',
+    description: 'Aplicação de fundo preparador e 2 demãos de tinta látex acrílica',
+    unit: 'm²',
+    price: 28.0,
+    cost: 14.0,
+  },
+] as const;
+
+/**
  * Catálogo da empresa: produtos, serviços e materiais.
  * Todo acesso é escopado por companyId (vindo do request autenticado, nunca do body).
  */
@@ -17,8 +154,57 @@ export class CatalogService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ------------------------------------------------------------------
-  // Helpers
+  // Helpers & Auto-seed
   // ------------------------------------------------------------------
+
+  /** Seed idempotente: cria materiais padrão se a empresa ainda não tiver nenhum material no catálogo. */
+  async ensureDefaultMaterials(companyId: string): Promise<number> {
+    const count = await this.prisma.material.count({ where: { companyId } });
+    if (count > 0) return 0;
+
+    const result = await this.prisma.material.createMany({
+      data: DEFAULT_CATALOG_MATERIALS.map((m) => ({
+        companyId,
+        name: m.name,
+        description: m.description,
+        unit: m.unit,
+        price: m.price,
+        cost: m.cost,
+        stockQty: m.stockQty,
+        minStockQty: m.minStockQty,
+      })),
+    });
+    return result.count;
+  }
+
+  /** Seed idempotente: cria serviços padrão se a empresa ainda não tiver nenhum serviço no catálogo. */
+  async ensureDefaultServices(companyId: string): Promise<number> {
+    const count = await this.prisma.service.count({ where: { companyId } });
+    if (count > 0) return 0;
+
+    const result = await this.prisma.service.createMany({
+      data: DEFAULT_CATALOG_SERVICES.map((s) => ({
+        companyId,
+        name: s.name,
+        description: s.description,
+        unit: s.unit,
+        price: s.price,
+        cost: s.cost,
+      })),
+    });
+    return result.count;
+  }
+
+  /** Rota/método para inicializar o catálogo com materiais e serviços padrão caso estejam vazios. */
+  async seedDefaults(companyId: string) {
+    const materialsAdded = await this.ensureDefaultMaterials(companyId);
+    const servicesAdded = await this.ensureDefaultServices(companyId);
+    return {
+      success: true,
+      materialsAdded,
+      servicesAdded,
+    };
+  }
 
   /** Filtro de busca por texto em name/description (LIKE). */
   private searchWhere(search?: string) {
@@ -143,6 +329,7 @@ export class CatalogService {
   }
 
   async listServices(companyId: string, search?: string) {
+    await this.ensureDefaultServices(companyId);
     const items = await this.prisma.service.findMany({
       where: { companyId, deletedAt: null, ...this.searchWhere(search) },
       orderBy: { name: 'asc' },
@@ -184,6 +371,7 @@ export class CatalogService {
   }
 
   async listMaterials(companyId: string, search?: string) {
+    await this.ensureDefaultMaterials(companyId);
     const items = await this.prisma.material.findMany({
       where: { companyId, deletedAt: null, ...this.searchWhere(search) },
       orderBy: { name: 'asc' },

@@ -399,14 +399,52 @@ export class QuotesService {
   private async ensureServiceOrderFromQuote(
     tx: any,
     companyId: string,
-    quote: { id: string; clientId: string; workId: string | null; startDate: Date | null; total: any; observations: string | null },
+    quote: {
+      id: string;
+      clientId: string;
+      workId: string | null;
+      startDate: Date | null;
+      total: any;
+      observations: string | null;
+      items?: any[];
+    },
   ) {
     // 1. Verificar se já existe ServiceOrder para este orçamento (idempotência)
-    const existingOrder = await tx.serviceOrder.findFirst({
+    let existingOrder = await tx.serviceOrder.findFirst({
       where: { companyId, quoteId: quote.id },
       include: SERVICE_ORDER_INCLUDE,
     });
+
+    const quoteMaterials = (
+      quote.items ??
+      (tx.quoteItem
+        ? await tx.quoteItem.findMany({
+            where: { quoteId: quote.id, itemType: 'MATERIAL' },
+          })
+        : [])
+    ).filter((i: any) => i.itemType === 'MATERIAL');
+
     if (existingOrder) {
+      // Se a OS já existia sem materiais, sincroniza os materiais do orçamento
+      if (
+        (!existingOrder.materials || existingOrder.materials.length === 0) &&
+        quoteMaterials.length > 0 &&
+        tx.serviceOrderMaterial
+      ) {
+        await tx.serviceOrderMaterial.createMany({
+          data: quoteMaterials.map((m: any) => ({
+            serviceOrderId: existingOrder.id,
+            materialName: m.name,
+            quantity: m.quantity,
+            unit: m.unit || 'un',
+          })),
+        });
+        const reloaded = await tx.serviceOrder.findUnique({
+          where: { id: existingOrder.id },
+          include: SERVICE_ORDER_INCLUDE,
+        });
+        if (reloaded) existingOrder = reloaded;
+      }
       // OS já existia (2ª aprovação): garante convertedAt mesmo assim.
       await this.markQuoteAsConverted(tx, quote.id);
       return { serviceOrder: existingOrder, created: false };
@@ -436,6 +474,17 @@ export class QuotesService {
           scheduledDate: quote.startDate ? new Date(quote.startDate) : undefined,
           saleValue: Number(quote.total),
           observations: quote.observations ?? undefined,
+          ...(quoteMaterials.length > 0
+            ? {
+                materials: {
+                  create: quoteMaterials.map((m: any) => ({
+                    materialName: m.name,
+                    quantity: m.quantity,
+                    unit: m.unit || 'un',
+                  })),
+                },
+              }
+            : {}),
         },
         include: SERVICE_ORDER_INCLUDE,
       });
@@ -923,6 +972,7 @@ export class QuotesService {
           startDate: quote.startDate,
           total: quote.total,
           observations: quote.observations,
+          items: quote.items,
         });
       },
     );

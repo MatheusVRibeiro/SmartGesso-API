@@ -101,12 +101,35 @@ export class ServiceOrdersService {
   }
 
   async findOne(companyId: string, id: string) {
-    const order = await this.prisma.serviceOrder.findFirst({
+    let order = await this.prisma.serviceOrder.findFirst({
       where: { id, companyId, deletedAt: null },
       include: SERVICE_ORDER_INCLUDE,
     });
     if (!order) throw new NotFoundException('Ordem de serviço não encontrada');
-    return this.convertDecimals(order);
+
+    // Se a OS foi gerada a partir de um orçamento e ainda não possui materiais,
+    // sincroniza os materiais do orçamento automaticamente.
+    if ((!order.materials || order.materials.length === 0) && order.quoteId) {
+      const quoteMaterials = await this.prisma.quoteItem.findMany({
+        where: { quoteId: order.quoteId, itemType: 'MATERIAL' },
+      });
+      if (quoteMaterials.length > 0) {
+        await this.prisma.serviceOrderMaterial.createMany({
+          data: quoteMaterials.map((m) => ({
+            serviceOrderId: order!.id,
+            materialName: m.name,
+            quantity: m.quantity,
+            unit: m.unit || 'un',
+          })),
+        });
+        order = await this.prisma.serviceOrder.findFirst({
+          where: { id, companyId, deletedAt: null },
+          include: SERVICE_ORDER_INCLUDE,
+        });
+      }
+    }
+
+    return this.convertDecimals(order!);
   }
 
   async update(companyId: string, id: string, dto: UpdateServiceOrderDto) {
